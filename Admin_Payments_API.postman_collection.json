@@ -1,0 +1,375 @@
+{
+  "info": {
+    "name": "Booqly Admin - Payments & Transactions",
+    "description": "Postman collection to test the admin Payments & Transactions dashboard APIs.\n\n## Setup\n1. Import this collection into Postman.\n2. Run **Admin Login** first — it saves `adminAuthToken` automatically.\n3. Run any payment endpoint below.\n\n## Auth\nAll payment endpoints require `Authorization: Bearer {{adminAuthToken}}` and admin role.\n\n## Date range\nMost endpoints accept optional `startDate` and `endDate` (ISO 8601). Defaults to last 30 days if omitted.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@booqlyapp.com",
+      "type": "string"
+    },
+    {
+      "key": "adminPassword",
+      "value": "AdminStrongPass1",
+      "type": "string"
+    },
+    {
+      "key": "adminAuthToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "startDate",
+      "value": "2026-05-07",
+      "type": "string"
+    },
+    {
+      "key": "endDate",
+      "value": "2026-06-06",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.status && response.token) {",
+                  "        pm.collectionVariables.set('adminAuthToken', response.token);",
+                  "        console.log('adminAuthToken saved');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"role\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login as admin. Saves token to `adminAuthToken` collection variable."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Payments & Transactions",
+      "item": [
+        {
+          "name": "1. Payment Summary (KPIs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/payments/summary?startDate={{startDate}}&endDate={{endDate}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "payments", "summary"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "ISO date, e.g. 2026-05-07"
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "ISO date, e.g. 2026-06-06"
+                }
+              ]
+            },
+            "description": "Top KPI cards: gross payments, commission, successful/failed payments, refunded amount, with % change vs previous period."
+          },
+          "response": [
+            {
+              "name": "Example Response",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"message\": \"Payment summary retrieved successfully\",\n  \"data\": {\n    \"dateRange\": {\n      \"startDate\": \"2026-05-07T00:00:00.000Z\",\n      \"endDate\": \"2026-06-06T23:59:59.999Z\"\n    },\n    \"totalGrossPayments\": 124560,\n    \"totalGrossPaymentsChange\": 12.5,\n    \"totalCommission\": 1868.4,\n    \"totalCommissionChange\": 12.5,\n    \"commissionRate\": 0.015,\n    \"successfulPayments\": 1248,\n    \"successfulPaymentsChange\": 8.3,\n    \"failedPayments\": 24,\n    \"failedPaymentsChange\": -11.2,\n    \"refundedAmount\": 1120,\n    \"refundedAmountChange\": -5.4\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "2. Commission by Category (Donut Chart)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/payments/commission-by-category?startDate={{startDate}}&endDate={{endDate}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "payments", "commission-by-category"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}"
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}"
+                }
+              ]
+            },
+            "description": "Commission breakdown by service category (Hair, Nails, Makeup, etc.) for donut chart."
+          },
+          "response": [
+            {
+              "name": "Example Response",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"message\": \"Commission by category retrieved successfully\",\n  \"data\": {\n    \"totalCommission\": 1868.4,\n    \"breakdown\": [\n      { \"category\": \"Hair\", \"amount\": 698.1, \"percentage\": 37.4 },\n      { \"category\": \"Nails\", \"amount\": 467.1, \"percentage\": 25 },\n      { \"category\": \"Makeup\", \"amount\": 326.4, \"percentage\": 17.5 },\n      { \"category\": \"Massage\", \"amount\": 233.55, \"percentage\": 12.5 },\n      { \"category\": \"Other\", \"amount\": 143.25, \"percentage\": 7.6 }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "3. Commission by Payment Method (Bar Chart)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/payments/commission-by-method?startDate={{startDate}}&endDate={{endDate}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "payments", "commission-by-method"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}"
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}"
+                }
+              ]
+            },
+            "description": "Commission breakdown by payment method (Apple Pay, Stripe Card, PayPal, Cash) for horizontal bar chart."
+          },
+          "response": [
+            {
+              "name": "Example Response",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"message\": \"Commission by payment method retrieved successfully\",\n  \"data\": {\n    \"totalCommission\": 1868.4,\n    \"breakdown\": [\n      { \"method\": \"apple_pay\", \"label\": \"Apple Pay\", \"amount\": 844.72, \"percentage\": 45.2 },\n      { \"method\": \"stripe_card\", \"label\": \"Stripe (Card)\", \"amount\": 611.3, \"percentage\": 32.7 },\n      { \"method\": \"paypal\", \"label\": \"PayPal\", \"amount\": 287.81, \"percentage\": 15.4 },\n      { \"method\": \"cash\", \"label\": \"Cash\", \"amount\": 124.57, \"percentage\": 6.7 }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "4. Top Paying Clients",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/payments/top-clients?startDate={{startDate}}&endDate={{endDate}}&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "payments", "top-clients"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}"
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Max 50"
+                }
+              ]
+            },
+            "description": "Top clients ranked by total spent and appointment count."
+          },
+          "response": [
+            {
+              "name": "Example Response",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"message\": \"Top paying clients retrieved successfully\",\n  \"data\": {\n    \"clients\": [\n      {\n        \"id\": \"uuid-here\",\n        \"name\": \"Jessica Brown\",\n        \"profilePic\": \"https://example.com/avatar.jpg\",\n        \"totalSpent\": 2350,\n        \"appointments\": 18\n      }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "5. Stripe Connect Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/payments/stripe-connect-status?page=1&limit=10&search=",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "payments", "stripe-connect-status"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Optional: filter by name, business name, or email"
+                }
+              ]
+            },
+            "description": "Provider Stripe Connect onboarding status table. Status values: connected, pending, not_started."
+          },
+          "response": [
+            {
+              "name": "Example Response",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"message\": \"Stripe Connect status retrieved successfully\",\n  \"data\": {\n    \"providers\": [\n      {\n        \"id\": \"uuid-here\",\n        \"name\": \"Sarah Johnson\",\n        \"profilePic\": \"https://example.com/avatar.jpg\",\n        \"email\": \"sarah@example.com\",\n        \"status\": \"connected\",\n        \"chargesEnabled\": true,\n        \"payoutsEnabled\": true,\n        \"detailsSubmitted\": true,\n        \"lastUpdated\": \"2026-06-06T12:00:00.000Z\"\n      }\n    ],\n    \"pagination\": {\n      \"currentPage\": 1,\n      \"totalPages\": 3,\n      \"totalItems\": 25,\n      \"itemsPerPage\": 10\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "6. Recent Payouts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/payments/payouts?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "payments", "payouts"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            },
+            "description": "Recent provider payouts from Stripe Connect. Falls back to derived earnings if no Stripe payout history exists."
+          },
+          "response": [
+            {
+              "name": "Example Response",
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"message\": \"Recent payouts retrieved successfully\",\n  \"data\": {\n    \"payouts\": [\n      {\n        \"id\": \"po_1234567890\",\n        \"provider\": {\n          \"id\": \"uuid-here\",\n          \"name\": \"Sarah Johnson\",\n          \"profilePic\": \"https://example.com/avatar.jpg\"\n        },\n        \"amount\": 1250,\n        \"status\": \"paid\",\n        \"date\": \"2026-06-06T10:30:00.000Z\",\n        \"currency\": \"USD\"\n      }\n    ],\n    \"pagination\": {\n      \"currentPage\": 1,\n      \"totalPages\": 2,\n      \"totalItems\": 15,\n      \"itemsPerPage\": 10\n    }\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Summary (Default - Last 30 Days)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/payments/summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "payments", "summary"]
+            },
+            "description": "Same as Payment Summary but without date filters — uses last 30 days by default."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

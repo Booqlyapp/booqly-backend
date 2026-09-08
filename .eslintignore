@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+coverage/
+*.js
+*.d.ts
+.env
+.env.*
+*.log
+*.sql
+scripts/
+website/
+nginx.conf
+ecosystem.config.js
+drop_tables.js
+grant_permissions.sql
+drop_all_tables.sql

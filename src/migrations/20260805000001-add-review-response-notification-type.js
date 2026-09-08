@@ -1,0 +1,15 @@
+"use strict";
+
+/** @type {import('sequelize-cli').Migration} */
+module.exports = {
+  async up(queryInterface) {
+    await queryInterface.sequelize.query(`
+      ALTER TYPE "enum_Notifications_type"
+      ADD VALUE IF NOT EXISTS 'review_response';
+    `);
+  },
+
+  async down() {
+    // PostgreSQL does not support removing individual enum values safely.
+  },
+};

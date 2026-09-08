@@ -1,0 +1,751 @@
+{
+  "info": {
+    "name": "Booqly Admin - Reviews & Flags",
+    "description": "Postman collection to test admin review moderation APIs (flagged reviews, semi-verified reviews, edit/reclassify/delete).\n\n## Setup\n1. Import this collection into Postman.\n2. Set `baseUrl` (default: http://localhost:4000).\n3. Run **Admin Login** first — saves `adminAuthToken` automatically.\n4. Run moderation/flag endpoints below.\n\n## Auth\nAll `/admin/reviews/*` endpoints require `Authorization: Bearer {{adminAuthToken}}` and admin role.\n\n## Test flow\n1. Flag a review from the app (or use **Flag Review** request with a user token).\n2. **Get Moderation Queue** with `moderationType=flag` and `status=pending`.\n3. Copy `flagId` from response → set collection variable.\n4. **Approve Flag** or **Reject Flag**.\n5. Verify review is hidden/shown on marketplace.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:4000",
+      "type": "string"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@booqlyapp.com",
+      "type": "string"
+    },
+    {
+      "key": "adminPassword",
+      "value": "AdminStrongPass1",
+      "type": "string"
+    },
+    {
+      "key": "adminAuthToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userAuthToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reviewId",
+      "value": "dfe352d5-b5da-4cee-b2af-d087d4809d38",
+      "type": "string"
+    },
+    {
+      "key": "flagId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "providerId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.status && response.token) {",
+                  "        pm.collectionVariables.set('adminAuthToken', response.token);",
+                  "        console.log('adminAuthToken saved');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"role\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login as admin. Saves token to `adminAuthToken`."
+          },
+          "response": []
+        },
+        {
+          "name": "User Login (for flag testing)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.status && response.token) {",
+                  "        pm.collectionVariables.set('userAuthToken', response.token);",
+                  "        console.log('userAuthToken saved');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"client@example.com\",\n  \"password\": \"your-password\",\n  \"role\": \"client\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login as client/provider to test flag submission. Update email/password."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User - Flag Review",
+      "item": [
+        {
+          "name": "Flag Review (client_to_provider)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reviewDirection\": \"client_to_provider\",\n  \"reason\": \"Spam or fake review\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/reviews/{{reviewId}}/flag",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews", "{{reviewId}}", "flag"]
+            },
+            "description": "Flag a client's review of a provider. Use userAuthToken (not admin)."
+          },
+          "response": []
+        },
+        {
+          "name": "Flag Review (provider_to_client)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{userAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reviewDirection\": \"provider_to_client\",\n  \"reason\": \"Inappropriate content\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/reviews/{{reviewId}}/flag",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews", "{{reviewId}}", "flag"]
+            },
+            "description": "Flag a provider's review of a client."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin - Moderation Queue",
+      "item": [
+        {
+          "name": "Get Moderation Queue (all)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.status && response.data?.items?.length > 0) {",
+                  "        const first = response.data.items[0];",
+                  "        if (first.moderationType === 'flag') {",
+                  "            pm.collectionVariables.set('flagId', first.id);",
+                  "            pm.collectionVariables.set('reviewId', first.review?.id || '');",
+                  "            console.log('flagId saved:', first.id);",
+                  "        } else {",
+                  "            pm.collectionVariables.set('reviewId', first.id);",
+                  "            console.log('reviewId saved:', first.id);",
+                  "        }",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/moderation?page=1&limit=20&moderationType=all",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "moderation"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "moderationType",
+                  "value": "all",
+                  "description": "flag | semi_verified | all"
+                }
+              ]
+            },
+            "description": "Get all moderation items (flags + semi-verified). Auto-saves flagId/reviewId from first item."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Moderation Queue (pending flags)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.status && response.data?.items?.length > 0) {",
+                  "        const first = response.data.items[0];",
+                  "        pm.collectionVariables.set('flagId', first.id);",
+                  "        pm.collectionVariables.set('reviewId', first.review?.id || '');",
+                  "        console.log('flagId saved:', first.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/moderation?page=1&limit=20&status=pending&moderationType=flag",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "moderation"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "description": "pending | flagged | approved | rejected"
+                },
+                {
+                  "key": "moderationType",
+                  "value": "flag"
+                }
+              ]
+            },
+            "description": "Get pending flagged reviews only."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Moderation Queue (semi-verified pending)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/moderation?page=1&limit=20&status=pending&moderationType=semi_verified",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "moderation"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "pending"
+                },
+                {
+                  "key": "moderationType",
+                  "value": "semi_verified"
+                }
+              ]
+            },
+            "description": "Get semi-verified reviews awaiting approval."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Moderation Queue (client_to_provider)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/moderation?page=1&limit=20&reviewDirection=client_to_provider",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "moderation"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "reviewDirection",
+                  "value": "client_to_provider",
+                  "description": "client_to_provider | provider_to_client"
+                }
+              ]
+            },
+            "description": "Filter by review direction."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Moderation Queue (provider_to_client)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/moderation?page=1&limit=20&reviewDirection=provider_to_client",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "moderation"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "reviewDirection",
+                  "value": "provider_to_client"
+                }
+              ]
+            },
+            "description": "Filter provider-to-client flagged reviews."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin - Resolve Flags",
+      "item": [
+        {
+          "name": "Approve Flag (hide review)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\",\n  \"adminNote\": \"Review violates community guidelines\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/flags/{{flagId}}/resolve",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "flags", "{{flagId}}", "resolve"]
+            },
+            "description": "Approve flag → review is hidden from public."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Flag (keep review)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"rejected\",\n  \"adminNote\": \"Flag dismissed, review is valid\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/flags/{{flagId}}/resolve",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "flags", "{{flagId}}", "resolve"]
+            },
+            "description": "Reject flag → review stays visible."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin - Semi-Verified Reviews",
+      "item": [
+        {
+          "name": "Approve Semi-Verified Review",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"approved\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/{{reviewId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "{{reviewId}}", "status"]
+            },
+            "description": "Approve semi-verified review submission."
+          },
+          "response": []
+        },
+        {
+          "name": "Reject Semi-Verified Review",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"rejected\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/{{reviewId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "{{reviewId}}", "status"]
+            },
+            "description": "Reject semi-verified review."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin - Edit & Manage Reviews",
+      "item": [
+        {
+          "name": "Edit Review",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 4,\n  \"comment\": \"Updated review comment by admin\",\n  \"status\": \"approved\",\n  \"isPublic\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/{{reviewId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "{{reviewId}}"]
+            },
+            "description": "Edit review content, rating, status, visibility."
+          },
+          "response": []
+        },
+        {
+          "name": "Reclassify Review (verified)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"verified\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/{{reviewId}}/reclassify",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "{{reviewId}}", "reclassify"]
+            },
+            "description": "Change label to verified."
+          },
+          "response": []
+        },
+        {
+          "name": "Reclassify Review (semi_verified)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"semi_verified\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/{{reviewId}}/reclassify",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "{{reviewId}}", "reclassify"]
+            },
+            "description": "Change label to semi_verified."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Review (hard delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/reviews/{{reviewId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "reviews", "{{reviewId}}"]
+            },
+            "description": "Permanently delete a review."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin - Legacy Review Endpoints",
+      "item": [
+        {
+          "name": "Get All Reviews",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reviews/all?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews", "all"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "approved",
+                  "disabled": true,
+                  "description": "pending | approved | rejected"
+                },
+                {
+                  "key": "type",
+                  "value": "verified",
+                  "disabled": true,
+                  "description": "verified | semi_verified"
+                },
+                {
+                  "key": "providerId",
+                  "value": "{{providerId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Legacy: paginated all reviews with filters."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Pending Reviews",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reviews/pending?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews", "pending"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Legacy: pending reviews only."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Provider Reviews (public)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reviews/provider/{{providerId}}?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["reviews", "provider", "{{providerId}}"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "includePrivate",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Public endpoint — verify review hidden after flag approve."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

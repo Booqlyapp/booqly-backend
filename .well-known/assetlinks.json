@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.fsprogrammers.booqly",
+    "sha256_cert_fingerprints": [
+      "05:75:EF:B7:6C:F1:43:51:FE:6F:ED:91:75:DE:5B:14:10:48:9C:F4:01:07:00:36:E1:AC:99:D2:92:D2:C8:E9"
+    ]
+  }
+}]

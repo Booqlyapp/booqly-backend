@@ -1,0 +1,628 @@
+{
+  "info": {
+    "name": "Booqly Admin - Platform Announcements",
+    "description": "Postman collection for Platform Announcements admin APIs (stats cards, list/filter, CRUD, publish/schedule).\n\n## Setup\n1. Import this collection into Postman.\n2. Set `baseUrl` (default: http://localhost:3000).\n3. Run **Admin Login** first — saves `adminAuthToken` automatically.\n4. Run **Get Announcement Stats** and **Create Announcement**.\n\n## Auth\nAll `/admin/announcements/*` endpoints require `Authorization: Bearer {{adminAuthToken}}` and admin role.\n\n## Status values\n`draft` | `scheduled` | `published` | `expired`\n\n## Type values\n`policy_update` | `promotion` | `system_update` | `feature_update` | `alert`\n\n## Audience values\n`all_users` | `active_users` | `clients` | `providers`",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@booqlyapp.com",
+      "type": "string"
+    },
+    {
+      "key": "adminPassword",
+      "value": "AdminStrongPass1",
+      "type": "string"
+    },
+    {
+      "key": "adminAuthToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "announcementId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.status && response.token) {",
+                  "        pm.collectionVariables.set('adminAuthToken', response.token);",
+                  "        console.log('adminAuthToken saved');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"role\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login as admin. Saves token to `adminAuthToken` collection variable."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard Stats",
+      "item": [
+        {
+          "name": "Get Announcement Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements", "stats"]
+            },
+            "description": "Top KPI cards: Total Announcements, Published, Scheduled, Drafts — each with count and percentChange vs last 7 days."
+          },
+          "response": [
+            {
+              "name": "Example Response",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"message\": \"Announcement stats retrieved successfully\",\n  \"data\": {\n    \"totalAnnouncements\": { \"count\": 28, \"percentChange\": 12.5 },\n    \"published\": { \"count\": 16, \"percentChange\": 8.1 },\n    \"scheduled\": { \"count\": 6, \"percentChange\": 2.4 },\n    \"drafts\": { \"count\": 6, \"percentChange\": -3.2 },\n    \"period\": \"last_7_days\"\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "Get Platform Dashboard Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/dashboard/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dashboard", "stats"]
+            },
+            "description": "Main admin dashboard KPIs: totalUsers, totalBookings, totalRevenue, totalActiveProviders."
+          },
+          "response": [
+            {
+              "name": "Example Response",
+              "status": "OK",
+              "code": 200,
+              "_postman_previewlanguage": "json",
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"message\": \"Dashboard stats retrieved successfully\",\n  \"data\": {\n    \"totalUsers\": 1250,\n    \"totalBookings\": 4380,\n    \"totalRevenue\": 152340.5,\n    \"totalActiveProviders\": 86\n  }\n}"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Announcements",
+      "item": [
+        {
+          "name": "1. List All Announcements",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements?page=1&limit=20&status=all",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "all",
+                  "description": "all | draft | scheduled | published | expired"
+                },
+                {
+                  "key": "type",
+                  "value": "",
+                  "disabled": true,
+                  "description": "policy_update | promotion | system_update | feature_update | alert"
+                },
+                {
+                  "key": "audience",
+                  "value": "",
+                  "disabled": true,
+                  "description": "all_users | active_users | clients | providers"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Search title/description"
+                }
+              ]
+            },
+            "description": "Paginated list for the announcements table. Supports status tabs, type/audience filters, and search."
+          },
+          "response": []
+        },
+        {
+          "name": "2. List Published",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements?status=published&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "published"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3. List Scheduled",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements?status=scheduled&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "scheduled"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4. List Expired",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements?status=expired&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "expired"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5. List Drafts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements?status=draft&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "draft"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "6. Search Announcements",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements?search=privacy&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements"],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "privacy"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7. Get Announcement By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements/{{announcementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements", "{{announcementId}}"]
+            },
+            "description": "View single announcement details (View action)."
+          },
+          "response": []
+        },
+        {
+          "name": "8. Create Draft Announcement",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.status && response.data && response.data.id) {",
+                  "        pm.collectionVariables.set('announcementId', response.data.id);",
+                  "        console.log('announcementId saved:', response.data.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated Privacy Policy\",\n  \"description\": \"We've updated our privacy policy to better protect your data\",\n  \"iconType\": \"megaphone\",\n  \"audience\": \"all_users\",\n  \"type\": \"policy_update\",\n  \"status\": \"draft\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements"]
+            },
+            "description": "Create a draft. Saves `announcementId` automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "9. Create Scheduled Announcement",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.status && response.data && response.data.id) {",
+                  "        pm.collectionVariables.set('announcementId', response.data.id);",
+                  "        console.log('announcementId saved:', response.data.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Mother's Day Special Campaign\",\n  \"description\": \"Join our Mother's Day campaign with exclusive discounts\",\n  \"iconType\": \"gift\",\n  \"audience\": \"active_users\",\n  \"type\": \"promotion\",\n  \"status\": \"scheduled\",\n  \"scheduledAt\": \"2026-09-01T10:00:00.000Z\",\n  \"expiresAt\": \"2026-09-15T23:59:59.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "10. Create Published Announcement",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.status && response.data && response.data.id) {",
+                  "        pm.collectionVariables.set('announcementId', response.data.id);",
+                  "        console.log('announcementId saved:', response.data.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"New Booking Features Available\",\n  \"description\": \"We've launched new booking features to enhance your experience\",\n  \"iconType\": \"star\",\n  \"audience\": \"all_users\",\n  \"type\": \"feature_update\",\n  \"status\": \"published\",\n  \"expiresAt\": \"2026-12-31T23:59:59.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "11. Update Announcement",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated Privacy Policy\",\n  \"description\": \"We've updated our privacy policy to better protect your data and improve transparency\",\n  \"audience\": \"all_users\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements/{{announcementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements", "{{announcementId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "12. Publish Announcement",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements/{{announcementId}}/publish",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements", "{{announcementId}}", "publish"]
+            },
+            "description": "Publish a draft/scheduled announcement immediately."
+          },
+          "response": []
+        },
+        {
+          "name": "13. Schedule Announcement",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scheduledAt\": \"2026-09-10T09:00:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements/{{announcementId}}/schedule",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements", "{{announcementId}}", "schedule"]
+            },
+            "description": "`scheduledAt` must be in the future."
+          },
+          "response": []
+        },
+        {
+          "name": "14. Unpublish to Draft",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements/{{announcementId}}/unpublish",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements", "{{announcementId}}", "unpublish"]
+            },
+            "description": "Move a published/scheduled announcement back to Drafts."
+          },
+          "response": []
+        },
+        {
+          "name": "15. Delete Announcement",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/announcements/{{announcementId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "announcements", "{{announcementId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,422 @@
+{
+  "info": {
+    "name": "Booqly Admin & User - Support Tools",
+    "description": "Support Tools APIs for admin management and user ticket submission.\n\n## Setup\n1. Import into Postman\n2. Set `baseUrl`\n3. Run **Admin Login** and/or **User Login**\n4. Test create / list / details / replies\n\n## Categories\nbilling | app_issue | verification | account | payment\n\n## Status\nopen | in_progress | resolved | closed\n\n## Priority\nlow | medium | high",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000", "type": "string" },
+    { "key": "adminEmail", "value": "admin@booqlyapp.com", "type": "string" },
+    { "key": "adminPassword", "value": "AdminStrongPass1", "type": "string" },
+    { "key": "adminAuthToken", "value": "", "type": "string" },
+    { "key": "userEmail", "value": "client@example.com", "type": "string" },
+    { "key": "userPassword", "value": "TestPass123!", "type": "string" },
+    { "key": "authToken", "value": "", "type": "string" },
+    { "key": "ticketId", "value": "", "type": "string" },
+    { "key": "userId", "value": "", "type": "string" },
+    { "key": "assigneeId", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const r = pm.response.json();",
+                  "  if (r.status && r.token) pm.collectionVariables.set('adminAuthToken', r.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"role\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "User Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const r = pm.response.json();",
+                  "  if (r.status && r.token) pm.collectionVariables.set('authToken', r.token);",
+                  "  if (r.data && r.data.user && r.data.user.id) pm.collectionVariables.set('userId', r.data.user.id);",
+                  "  else if (r.user && r.user.id) pm.collectionVariables.set('userId', r.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"role\": \"client\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin - Support Tools",
+      "item": [
+        {
+          "name": "1. Get Support Stats",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAuthToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/support/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "support", "stats"]
+            },
+            "description": "KPI cards: totalTickets, openTickets, inProgress, resolved, avgResponseTime (+ percentChange)"
+          },
+          "response": []
+        },
+        {
+          "name": "2. List Assignees",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const r = pm.response.json();",
+                  "  if (r.data && r.data[0] && r.data[0].id) pm.collectionVariables.set('assigneeId', r.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAuthToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/support/assignees",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "support", "assignees"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3. List All Tickets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAuthToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/support/tickets?page=1&limit=20&status=all",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "support", "tickets"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "all", "description": "all | open | in_progress | resolved | closed" },
+                { "key": "category", "value": "", "disabled": true },
+                { "key": "priority", "value": "", "disabled": true },
+                { "key": "search", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4. List Open Tickets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAuthToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/support/tickets?status=open&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "support", "tickets"],
+              "query": [
+                { "key": "status", "value": "open" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5. Create Ticket (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const r = pm.response.json();",
+                  "  if (r.data && r.data.id) pm.collectionVariables.set('ticketId', r.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminAuthToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{userId}}\",\n  \"category\": \"billing\",\n  \"subject\": \"Refund not received for last payment\",\n  \"description\": \"I was charged twice for my last booking and have not received a refund yet.\",\n  \"priority\": \"high\",\n  \"assignedToId\": \"{{assigneeId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/support/tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "support", "tickets"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "6. Get Ticket Details",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAuthToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/support/tickets/{{ticketId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "support", "tickets", "{{ticketId}}"]
+            },
+            "description": "Details page with ticket info + message thread (includes internal notes)."
+          },
+          "response": []
+        },
+        {
+          "name": "7. Update Ticket Status / Assign",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminAuthToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"in_progress\",\n  \"priority\": \"high\",\n  \"assignedToId\": \"{{assigneeId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/support/tickets/{{ticketId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "support", "tickets", "{{ticketId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "8. Admin Reply",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminAuthToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Thanks for reaching out. We are checking your refund with the payments team.\",\n  \"isInternal\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/support/tickets/{{ticketId}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "support", "tickets", "{{ticketId}}", "messages"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9. Admin Internal Note",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{adminAuthToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Internal: Stripe charge ID looks duplicated — escalate to finance.\",\n  \"isInternal\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/support/tickets/{{ticketId}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "support", "tickets", "{{ticketId}}", "messages"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "10. Upload Attachment",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminAuthToken}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "PNG, JPG, or PDF up to 10MB"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/admin/support/attachments",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "support", "attachments"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User - Support Tickets",
+      "item": [
+        {
+          "name": "1. Create My Ticket",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const r = pm.response.json();",
+                  "  if (r.data && r.data.id) pm.collectionVariables.set('ticketId', r.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"app_issue\",\n  \"subject\": \"App crashes when opening chat\",\n  \"description\": \"Whenever I open the chat screen the app closes immediately on iOS.\",\n  \"priority\": \"medium\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/support/tickets",
+              "host": ["{{baseUrl}}"],
+              "path": ["support", "tickets"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2. List My Tickets",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{authToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/support/tickets?page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["support", "tickets"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "all", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3. Get My Ticket Details",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{authToken}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/support/tickets/{{ticketId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["support", "tickets", "{{ticketId}}"]
+            },
+            "description": "User details page (public messages only, no internal notes)."
+          },
+          "response": []
+        },
+        {
+          "name": "4. Reply To My Ticket",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{authToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Thanks, I also attached a screenshot of the crash.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/support/tickets/{{ticketId}}/messages",
+              "host": ["{{baseUrl}}"],
+              "path": ["support", "tickets", "{{ticketId}}", "messages"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5. Upload Attachment",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{authToken}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/support/attachments",
+              "host": ["{{baseUrl}}"],
+              "path": ["support", "attachments"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

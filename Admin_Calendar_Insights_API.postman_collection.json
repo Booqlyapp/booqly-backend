@@ -1,0 +1,338 @@
+{
+  "info": {
+    "name": "Booqly Admin - Calendar Insights",
+    "description": "Postman collection for the admin Calendar Insights dashboard APIs.\n\n## Setup\n1. Import this collection into Postman.\n2. Run **Admin Login** first — it saves `adminAuthToken` automatically.\n3. Run any Calendar Insights endpoint below.\n\n## Auth\nAll endpoints require `Authorization: Bearer {{adminAuthToken}}` and admin role.\n\n## Query params\n- `startDate` / `endDate` — ISO date range (optional)\n- `period` — `weekly` | `monthly` | `yearly` (default `weekly`)\n- `upcomingLimit` — max upcoming bookings (default 10, max 50)\n\n## Covers UI\n- Summary KPIs: total, completed, upcoming, cancelled, revenue (+ % change)\n- Bookings overview chart (current vs previous period)\n- Top services by percentage\n- Bookings by time slot percentages\n- Revenue overview weekly/monthly/yearly\n- Upcoming bookings list",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@booqlyapp.com",
+      "type": "string"
+    },
+    {
+      "key": "adminPassword",
+      "value": "AdminStrongPass1",
+      "type": "string"
+    },
+    {
+      "key": "adminAuthToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "startDate",
+      "value": "2025-05-07",
+      "type": "string"
+    },
+    {
+      "key": "endDate",
+      "value": "2025-05-13",
+      "type": "string"
+    },
+    {
+      "key": "period",
+      "value": "weekly",
+      "type": "string"
+    },
+    {
+      "key": "upcomingLimit",
+      "value": "10",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Admin Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.status && response.token) {",
+                  "        pm.collectionVariables.set('adminAuthToken', response.token);",
+                  "        console.log('adminAuthToken saved');",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"role\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            },
+            "description": "Login as admin. Saves token to `adminAuthToken` collection variable."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin Dashboard",
+      "item": [
+        {
+          "name": "1. Dashboard Stats (all-time)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/dashboard/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dashboard", "stats"]
+            },
+            "description": "All-time admin KPIs: totalUsers, totalBookings, totalRevenue, totalActiveProviders."
+          },
+          "response": [
+            {
+              "name": "Example Response",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAuthToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/dashboard/stats",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "dashboard", "stats"]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"message\": \"Dashboard stats retrieved successfully\",\n  \"data\": {\n    \"totalUsers\": 4520,\n    \"totalBookings\": 12840,\n    \"totalRevenue\": 248600.5,\n    \"totalActiveProviders\": 312\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "2. Calendar Insights (default weekly)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/dashboard/calendar-insights?period=weekly&upcomingLimit={{upcomingLimit}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dashboard", "calendar-insights"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "weekly",
+                  "description": "weekly | monthly | yearly"
+                },
+                {
+                  "key": "upcomingLimit",
+                  "value": "{{upcomingLimit}}",
+                  "description": "Max upcoming bookings (1-50)"
+                }
+              ]
+            },
+            "description": "Full Calendar Insights payload for last 7 days (when no startDate/endDate).\n\nReturns: summary KPIs, bookingsOverview, topServices, bookingsByTimeSlot, revenueOverview, upcomingBookings."
+          },
+          "response": [
+            {
+              "name": "Example Response",
+              "originalRequest": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{adminAuthToken}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/admin/dashboard/calendar-insights?period=weekly",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["admin", "dashboard", "calendar-insights"],
+                  "query": [
+                    {
+                      "key": "period",
+                      "value": "weekly"
+                    }
+                  ]
+                }
+              },
+              "status": "OK",
+              "code": 200,
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json"
+                }
+              ],
+              "body": "{\n  \"status\": true,\n  \"message\": \"Calendar insights retrieved successfully\",\n  \"data\": {\n    \"range\": {\n      \"startDate\": \"2025-05-07T00:00:00.000Z\",\n      \"endDate\": \"2025-05-13T23:59:59.999Z\",\n      \"previousStartDate\": \"2025-04-30T00:00:00.000Z\",\n      \"previousEndDate\": \"2025-05-06T23:59:59.999Z\",\n      \"period\": \"weekly\"\n    },\n    \"summary\": {\n      \"totalBookings\": { \"count\": 1248, \"changePercent\": 12.6 },\n      \"completed\": { \"count\": 1016, \"changePercent\": 9.4 },\n      \"upcoming\": { \"count\": 189, \"changePercent\": 5.2 },\n      \"cancelled\": { \"count\": 43, \"changePercent\": -6.1 },\n      \"totalRevenue\": { \"amount\": 24680, \"changePercent\": 14.8 }\n    },\n    \"bookingsOverview\": {\n      \"current\": [\n        { \"date\": \"2025-05-07\", \"label\": \"May 7\", \"bookings\": 165 },\n        { \"date\": \"2025-05-10\", \"label\": \"May 10\", \"bookings\": 340 }\n      ],\n      \"previous\": [\n        { \"date\": \"2025-04-30\", \"label\": \"Apr 30\", \"bookings\": 140 }\n      ]\n    },\n    \"topServices\": [\n      { \"serviceId\": \"uuid\", \"serviceName\": \"Facial Treatments\", \"bookings\": 342, \"percentage\": 27 },\n      { \"serviceId\": \"uuid\", \"serviceName\": \"Manicure & Pedicure\", \"bookings\": 298, \"percentage\": 24 }\n    ],\n    \"bookingsByTimeSlot\": {\n      \"totalBookings\": 1248,\n      \"slots\": [\n        { \"key\": \"09-12\", \"slot\": \"9 AM – 12 PM\", \"bookings\": 349, \"percentage\": 28 },\n        { \"key\": \"12-15\", \"slot\": \"12 PM – 3 PM\", \"bookings\": 312, \"percentage\": 25 },\n        { \"key\": \"15-18\", \"slot\": \"3 PM – 6 PM\", \"bookings\": 250, \"percentage\": 20 },\n        { \"key\": \"18-21\", \"slot\": \"6 PM – 9 PM\", \"bookings\": 187, \"percentage\": 15 },\n        { \"key\": \"21-24\", \"slot\": \"9 PM – 12 AM\", \"bookings\": 150, \"percentage\": 12 }\n      ]\n    },\n    \"revenueOverview\": {\n      \"period\": \"weekly\",\n      \"total\": 24680,\n      \"changePercent\": 14.8,\n      \"series\": [\n        { \"date\": \"2025-05-07\", \"label\": \"May 7\", \"revenue\": 3200 },\n        { \"date\": \"2025-05-10\", \"label\": \"May 10\", \"revenue\": 5800 }\n      ]\n    },\n    \"upcomingBookings\": [\n      {\n        \"id\": \"uuid\",\n        \"clientName\": \"Emma Johnson\",\n        \"serviceName\": \"Facial Treatment\",\n        \"dateTime\": \"2025-05-14T10:00:00.000Z\",\n        \"status\": \"pending\",\n        \"displayStatus\": \"Confirmed\",\n        \"paymentStatus\": \"paid\",\n        \"price\": 85\n      }\n    ]\n  }\n}"
+            }
+          ]
+        },
+        {
+          "name": "3. Calendar Insights (custom date range)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/dashboard/calendar-insights?startDate={{startDate}}&endDate={{endDate}}&period={{period}}&upcomingLimit={{upcomingLimit}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dashboard", "calendar-insights"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}",
+                  "description": "ISO date, e.g. 2025-05-07"
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}",
+                  "description": "ISO date, e.g. 2025-05-13"
+                },
+                {
+                  "key": "period",
+                  "value": "{{period}}",
+                  "description": "Controls revenue series granularity: weekly|monthly|yearly"
+                },
+                {
+                  "key": "upcomingLimit",
+                  "value": "{{upcomingLimit}}"
+                }
+              ]
+            },
+            "description": "Calendar Insights for a custom date picker range (matches UI May 7 – May 13 style filter). Previous equal-length period is used for % change."
+          },
+          "response": []
+        },
+        {
+          "name": "4. Calendar Insights — Weekly revenue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/dashboard/calendar-insights?startDate={{startDate}}&endDate={{endDate}}&period=weekly",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dashboard", "calendar-insights"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "{{startDate}}"
+                },
+                {
+                  "key": "endDate",
+                  "value": "{{endDate}}"
+                },
+                {
+                  "key": "period",
+                  "value": "weekly",
+                  "description": "Daily revenue bars for the selected range"
+                }
+              ]
+            },
+            "description": "Revenue Overview toggle = Weekly. `revenueOverview.series` is daily points."
+          },
+          "response": []
+        },
+        {
+          "name": "5. Calendar Insights — Monthly revenue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/dashboard/calendar-insights?period=monthly",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dashboard", "calendar-insights"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "monthly",
+                  "description": "Month-to-date range + daily revenue series"
+                }
+              ]
+            },
+            "description": "Revenue Overview toggle = Monthly. Default range is current month-to-date when dates omitted."
+          },
+          "response": []
+        },
+        {
+          "name": "6. Calendar Insights — Yearly revenue",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAuthToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/dashboard/calendar-insights?period=yearly",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "dashboard", "calendar-insights"],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "yearly",
+                  "description": "Year-to-date range + monthly revenue series"
+                }
+              ]
+            },
+            "description": "Revenue Overview toggle = Yearly. Default range is year-to-date; `revenueOverview.series` is monthly points."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
