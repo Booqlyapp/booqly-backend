@@ -31,6 +31,12 @@ interface UserAttributes {
   referredBy: string | null;
   freeBookingUsed: boolean | false;
   identityDocumentUrl: string | null;
+  identityVerified: boolean;
+  professionalVerified: boolean;
+  businessVerified: boolean;
+  professionalLicenseType: string | null;
+  professionalDocumentUrl: string | null;
+  businessDocumentUrl: string | null;
   fcmToken: string | null;
   passwordResetOtp: string | null;
   passwordResetOtpExpiresAt: Date | null;
@@ -75,6 +81,12 @@ export class User
   declare referredBy: string | null;
   declare freeBookingUsed: boolean;
   declare identityDocumentUrl: string | null;
+  declare identityVerified: CreationOptional<boolean>;
+  declare professionalVerified: CreationOptional<boolean>;
+  declare businessVerified: CreationOptional<boolean>;
+  declare professionalLicenseType: string | null;
+  declare professionalDocumentUrl: string | null;
+  declare businessDocumentUrl: string | null;
   declare fcmToken: string | null;
   declare passwordResetOtp: string | null;
   declare passwordResetOtpExpiresAt: Date | null;
@@ -199,6 +211,33 @@ export default function initUser(sequelize: Sequelize) {
         defaultValue: false,
       },
       identityDocumentUrl: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      identityVerified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      professionalVerified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      businessVerified: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      professionalLicenseType: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      professionalDocumentUrl: {
+        type: DataTypes.STRING,
+        allowNull: true,
+      },
+      businessDocumentUrl: {
         type: DataTypes.STRING,
         allowNull: true,
       },

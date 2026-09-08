@@ -4,6 +4,8 @@ import {
   uploadUserProfilePic,
   removeUserProfilePic,
   uploadIdentityDocument,
+  uploadProfessionalDocument,
+  uploadBusinessDocument,
   getUserProfile,
   deleteUserAccount,
   updateUserStatus,
@@ -17,10 +19,17 @@ import {
 import validateUser from "../middlewares/validate_user";
 import { validate, schemas, validateUUID } from "../middlewares/validation.middleware";
 import { authenticateToken, requireRole } from "../middlewares/auth.middleware";
-import { createProfilePicUpload, createIdentityDocUpload } from "../utils/multer-config";
+import {
+  createProfilePicUpload,
+  createIdentityDocUpload,
+  createProfessionalDocUpload,
+  createBusinessDocUpload,
+} from "../utils/multer-config";
 
 const upload = createProfilePicUpload();
 const identityDocUpload = createIdentityDocUpload();
+const professionalDocUpload = createProfessionalDocUpload();
+const businessDocUpload = createBusinessDocUpload();
 const router = Router();
 
 // Get user profile (requires authentication)
@@ -58,6 +67,22 @@ router.post(
   authenticateToken,
   identityDocUpload.single("identityDocument"),
   uploadIdentityDocument
+);
+
+// Upload professional license document (solo, requires authentication)
+router.post(
+  "/upload-professional-document",
+  authenticateToken,
+  professionalDocUpload.single("professionalDocument"),
+  uploadProfessionalDocument
+);
+
+// Upload business document (solo, requires authentication)
+router.post(
+  "/upload-business-document",
+  authenticateToken,
+  businessDocUpload.single("businessDocument"),
+  uploadBusinessDocument
 );
 
 // Delete user account (requires authentication)

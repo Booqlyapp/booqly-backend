@@ -1,4 +1,6 @@
 import { Request, Response } from "express";
+import path from "path";
+import sharp from "sharp";
 import { User } from "../models/user_model";
 import { Marketplace } from "../models/marketplace_model";
 import { Subscription } from "../models/subscription_model";
@@ -589,6 +591,7 @@ export const uploadIdentityDocument = async (
       await user.update({
         status: newStatus,
         accountVerified: newStatus === "verified",
+        identityVerified: newStatus === "verified",
       });
 
       if (newStatus === "verified" || newStatus === "rejected") {
@@ -641,6 +644,239 @@ export const uploadIdentityDocument = async (
     return res.status(500).json({
       status: false,
       message: "Failed to upload identity document.",
+    });
+  }
+};
+
+/**
+ * Lightweight document quality check for professional/business verification.
+ * Ensures the upload is a readable image of the required minimum resolution.
+ */
+async function verifyDocumentQuality(
+  absolutePath: string
+): Promise<{ passes: boolean; message: string }> {
+  try {
+    const metadata = await sharp(absolutePath).metadata();
+    if (!metadata.width || !metadata.height) {
+      return {
+        passes: false,
+        message:
+          "We could not read this document. Please upload a clear photo of the document.",
+      };
+    }
+    if (metadata.width < 300 || metadata.height < 180) {
+      return {
+        passes: false,
+        message:
+          "The document is too small or unclear. Please upload a higher resolution photo.",
+      };
+    }
+    return { passes: true, message: "" };
+  } catch {
+    return {
+      passes: false,
+      message:
+        "The uploaded file is not a valid image. Please upload a JPG, PNG, or WEBP file.",
+    };
+  }
+}
+
+/**
+ * Upload a solo professional license document (e.g. nails, esthetics, waxing)
+ */
+export const uploadProfessionalDocument = async (
+  req: AuthRequest,
+  res: Response
+): Promise<any> => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        status: false,
+        message: "Authentication required",
+      });
+    }
+
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({
+        status: false,
+        message: "No file uploaded.",
+      });
+    }
+
+    const user = req.user;
+    const licenseType =
+      typeof req.body.licenseType === "string" &&
+      req.body.licenseType.trim() !== ""
+        ? req.body.licenseType.trim()
+        : null;
+
+    const relativePath = `verification-docs/licenseCard/${file.filename}`;
+    const absolutePath = path.join(process.cwd(), "uploads", relativePath);
+
+    const quality = await verifyDocumentQuality(absolutePath);
+    if (!quality.passes) {
+      await localFileStorage.deleteFile(relativePath);
+      return res.status(200).json({
+        status: false,
+        message: quality.message,
+      });
+    }
+
+    // Delete old professional document if exists
+    if (user.professionalDocumentUrl) {
+      const oldRelativePath = localFileStorage.extractRelativePath(
+        user.professionalDocumentUrl
+      );
+      await localFileStorage.deleteFile(oldRelativePath);
+    }
+
+    const publicUrl = localFileStorage.getPublicUrl(relativePath);
+
+    await user.update({
+      professionalDocumentUrl: publicUrl,
+      professionalLicenseType:
+        licenseType ?? user.professionalLicenseType ?? null,
+      professionalVerified: true,
+    });
+
+    const isAccountVerified = Boolean(
+      user.identityVerified || user.professionalVerified || user.businessVerified
+    );
+    await user.update({
+      status: isAccountVerified ? "verified" : "pending",
+      accountVerified: isAccountVerified,
+    });
+
+    try {
+      const { NotificationService } = await import(
+        "../services/notification.service"
+      );
+      await NotificationService.createNotification({
+        userId: user.id,
+        type: "professional_verified",
+        title: "Professional Verified",
+        content:
+          "Congratulations! Your professional license has been verified. You are now a Booqly Verified Professional.",
+        data: { verificationStatus: "verified" },
+        channels: { push: true, in_app: true },
+      });
+    } catch (notifyError) {
+      console.error("Failed to send professional verification notification:", notifyError);
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Professional license uploaded and verified successfully",
+      data: {
+        professionalDocumentUrl: publicUrl,
+        professionalVerified: true,
+        professionalLicenseType: user.professionalLicenseType,
+        verificationStatus: "verified",
+      },
+    });
+  } catch (error) {
+    console.error("Error uploading professional document:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to upload professional document.",
+    });
+  }
+};
+
+/**
+ * Upload a solo business document (EIN, lease, or Google Business login screenshot)
+ */
+export const uploadBusinessDocument = async (
+  req: AuthRequest,
+  res: Response
+): Promise<any> => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        status: false,
+        message: "Authentication required",
+      });
+    }
+
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({
+        status: false,
+        message: "No file uploaded.",
+      });
+    }
+
+    const user = req.user;
+
+    const relativePath = `verification-docs/businessDoc/${file.filename}`;
+    const absolutePath = path.join(process.cwd(), "uploads", relativePath);
+
+    const quality = await verifyDocumentQuality(absolutePath);
+    if (!quality.passes) {
+      await localFileStorage.deleteFile(relativePath);
+      return res.status(200).json({
+        status: false,
+        message: quality.message,
+      });
+    }
+
+    // Delete old business document if exists
+    if (user.businessDocumentUrl) {
+      const oldRelativePath = localFileStorage.extractRelativePath(
+        user.businessDocumentUrl
+      );
+      await localFileStorage.deleteFile(oldRelativePath);
+    }
+
+    const publicUrl = localFileStorage.getPublicUrl(relativePath);
+
+    await user.update({
+      businessDocumentUrl: publicUrl,
+      businessVerified: true,
+    });
+
+    const isAccountVerified = Boolean(
+      user.identityVerified || user.professionalVerified || user.businessVerified
+    );
+    await user.update({
+      status: isAccountVerified ? "verified" : "pending",
+      accountVerified: isAccountVerified,
+    });
+
+    try {
+      const { NotificationService } = await import(
+        "../services/notification.service"
+      );
+      await NotificationService.createNotification({
+        userId: user.id,
+        type: "business_verified",
+        title: "Business Verified",
+        content:
+          "Congratulations! Your business documents have been verified. You are now a Booqly Verified Business.",
+        data: { verificationStatus: "verified" },
+        channels: { push: true, in_app: true },
+      });
+    } catch (notifyError) {
+      console.error("Failed to send business verification notification:", notifyError);
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Business document uploaded and verified successfully",
+      data: {
+        businessDocumentUrl: publicUrl,
+        businessVerified: true,
+        verificationStatus: "verified",
+      },
+    });
+  } catch (error) {
+    console.error("Error uploading business document:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to upload business document.",
     });
   }
 };

@@ -319,6 +319,66 @@ export const createIdentityDocUpload = () => {
 };
 
 /**
+ * Create multer upload middleware for professional license documents (solo)
+ */
+export const createProfessionalDocUpload = () => {
+  return multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => {
+        const uploadPath = path.join(process.cwd(), 'uploads', 'verification-docs', 'licenseCard');
+
+        // Ensure directory exists
+        if (!fs.existsSync(uploadPath)) {
+          fs.mkdirSync(uploadPath, { recursive: true });
+          console.log(`Created upload directory: ${uploadPath}`);
+        }
+
+        cb(null, uploadPath);
+      },
+      filename: (req: any, file, cb) => {
+        const prefix = req.user ? `user-${req.user.id}` : '';
+        const filename = generateUniqueFilename(file.originalname, prefix);
+        cb(null, filename);
+      }
+    }),
+    limits: {
+      fileSize: MAX_FILE_SIZE,
+    },
+    fileFilter,
+  });
+};
+
+/**
+ * Create multer upload middleware for business documents (solo)
+ */
+export const createBusinessDocUpload = () => {
+  return multer({
+    storage: multer.diskStorage({
+      destination: (req, file, cb) => {
+        const uploadPath = path.join(process.cwd(), 'uploads', 'verification-docs', 'businessDoc');
+
+        // Ensure directory exists
+        if (!fs.existsSync(uploadPath)) {
+          fs.mkdirSync(uploadPath, { recursive: true });
+          console.log(`Created upload directory: ${uploadPath}`);
+        }
+
+        cb(null, uploadPath);
+      },
+      filename: (req: any, file, cb) => {
+        const prefix = req.user ? `user-${req.user.id}` : '';
+        const filename = generateUniqueFilename(file.originalname, prefix);
+        cb(null, filename);
+      }
+    }),
+    limits: {
+      fileSize: MAX_FILE_SIZE,
+    },
+    fileFilter,
+  });
+};
+
+/**
  * Create multer upload middleware for chat images
  */
 export const createChatImageUpload = () => {

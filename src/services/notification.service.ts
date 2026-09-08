@@ -8,7 +8,7 @@ const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
 
 interface NotificationData {
   userId: string;
-  type: 'booking_confirmation' | 'booking_reminder' | 'message' | 'review' | 'payment' | 'subscription' | 'review_response' | 'identity_verified' | 'identity_rejected';
+  type: 'booking_confirmation' | 'booking_reminder' | 'message' | 'review' | 'payment' | 'subscription' | 'review_response' | 'identity_verified' | 'identity_rejected' | 'professional_verified' | 'professional_rejected' | 'business_verified' | 'business_rejected';
   title: string;
   content: string;
   data?: any;

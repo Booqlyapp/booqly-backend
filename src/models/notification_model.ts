@@ -10,7 +10,7 @@ import {
 interface NotificationAttributes {
   id: string;
   userId: string;
-  type: "booking_confirmation" | "booking_reminder" | "message" | "review" | "payment" | "subscription" | "review_response" | "identity_verified" | "identity_rejected";
+type: "booking_confirmation" | "booking_reminder" | "message" | "review" | "payment" | "subscription" | "review_response" | "identity_verified" | "identity_rejected" | "professional_verified" | "professional_rejected" | "business_verified" | "business_rejected";
   title: string;
   content: string;
   data: object | null;
@@ -26,7 +26,7 @@ export class Notification
 {
   declare id: CreationOptional<string>;
   declare userId: string;
-  declare type: "booking_confirmation" | "booking_reminder" | "message" | "review" | "payment" | "subscription" | "review_response" | "identity_verified" | "identity_rejected";
+  declare type: "booking_confirmation" | "booking_reminder" | "message" | "review" | "payment" | "subscription" | "review_response" | "identity_verified" | "identity_rejected" | "professional_verified" | "professional_rejected" | "business_verified" | "business_rejected";
   declare title: string;
   declare content: string;
   declare data: object | null;
@@ -64,7 +64,11 @@ export default function initNotification(sequelize: Sequelize) {
           "subscription",
           "review_response",
           "identity_verified",
-          "identity_rejected"
+          "identity_rejected",
+          "professional_verified",
+          "professional_rejected",
+          "business_verified",
+          "business_rejected"
         ),
         allowNull: false,
       },
