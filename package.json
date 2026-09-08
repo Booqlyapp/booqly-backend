@@ -29,9 +29,10 @@
     "db:reset": "npx sequelize-cli db:drop && npx sequelize-cli db:create && npx sequelize-cli db:migrate",
     "init:uploads": "node scripts/init-upload-dirs.js",
     "create-admin": "ts-node src/scripts/create-admin.ts",
-    "postbuild": "npm run init:uploads"
+    "postbuild": "npm run init:uploads && node -e \"require('fs').copyFileSync('src/utils/pdf-worker-script.mjs','dist/utils/pdf-worker-script.mjs')\""
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.8",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
@@ -46,6 +47,7 @@
     "multer": "^2.0.2",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.10.1",
+    "pdfjs-dist": "^6.3.289",
     "pg": "^8.16.3",
     "pg-hstore": "^2.3.4",
     "pino": "^8.17.2",

@@ -349,6 +349,31 @@ export const createProfessionalDocUpload = () => {
 };
 
 /**
+ * File filter for business documents (EIN / LLC). Accepts images and PDFs.
+ */
+const businessDocFileFilter = (req: any, file: any, cb: any) => {
+  if (
+    ALLOWED_MIMETYPES.includes(file.mimetype) ||
+    ALLOWED_PDF_MIMETYPES.includes(file.mimetype)
+  ) {
+    cb(null, true);
+    return;
+  }
+
+  if (file.mimetype === 'application/octet-stream') {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const allowedExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'];
+
+    if (allowedExtensions.includes(ext)) {
+      cb(null, true);
+      return;
+    }
+  }
+
+  cb(new Error(`Invalid file type "${file.mimetype}". Only images (JPG, PNG, WEBP) or PDF are allowed.`), false);
+};
+
+/**
  * Create multer upload middleware for business documents (solo)
  */
 export const createBusinessDocUpload = () => {
@@ -372,9 +397,9 @@ export const createBusinessDocUpload = () => {
       }
     }),
     limits: {
-      fileSize: MAX_FILE_SIZE,
+      fileSize: 10 * 1024 * 1024,
     },
-    fileFilter,
+    fileFilter: businessDocFileFilter,
   });
 };
 

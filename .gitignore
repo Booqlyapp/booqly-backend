@@ -65,6 +65,10 @@ src/config/booqlyServiceAccountKey.json
 *.db
 uploads/
 
+# Tesseract runtime OCR cache (written to the project root at runtime)
+/eng.traineddata
+/eng.traineddata.gz
+
 # Sensitive config files
 src/config/config.ts
 src/config/database.ts

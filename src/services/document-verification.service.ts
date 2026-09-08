@@ -277,6 +277,7 @@ async function runOCR(filePath: string): Promise<{ text: string; confidence: num
   try {
     const worker = await timeout(
       Tesseract.createWorker("eng", 1, {
+        langPath: path.join(__dirname, "..", "..", "ocr-data"),
         logger: (m) => {
           if (m.status === "recognizing text") {
             process.stdout.write(`\rOCR progress: ${Math.round(m.progress * 100)}%`);

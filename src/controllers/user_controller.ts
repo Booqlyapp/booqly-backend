@@ -682,6 +682,47 @@ async function verifyDocumentQuality(
 }
 
 /**
+ * Verify a business document (EIN letter or LLC certificate) uploaded as a PDF.
+ * - If the PDF has embedded text, it is machine-readable and passes.
+ * - If it is a scanned PDF (no text), the first page is rendered to an image
+ *   and must meet the same minimum resolution as a photo upload.
+ */
+async function verifyBusinessPdf(
+  absolutePath: string
+): Promise<{ passes: boolean; message: string }> {
+  const { extractPdfText, renderPdfFirstPageToPng } = await import(
+    "../utils/pdf-utils"
+  );
+
+  const text = await extractPdfText(absolutePath);
+  if (text.length >= 80) {
+    return {
+      passes: true,
+      message: "",
+    };
+  }
+
+  const previewPath = `${absolutePath}.preview.png`;
+  try {
+    const rendered = await renderPdfFirstPageToPng(absolutePath, previewPath);
+    if (rendered && rendered.width >= 300 && rendered.height >= 180) {
+      return { passes: true, message: "" };
+    }
+  } finally {
+    const fs = await import("fs");
+    fs.promises
+      .unlink(previewPath)
+      .catch(() => {});
+  }
+
+  return {
+    passes: false,
+    message:
+      "We could not read this PDF. Please upload a clear image (JPG or PNG) of your EIN letter or LLC certificate.",
+  };
+}
+
+/**
  * Upload a solo professional license document (e.g. nails, esthetics, waxing)
  */
 export const uploadProfessionalDocument = async (
@@ -786,7 +827,7 @@ export const uploadProfessionalDocument = async (
 };
 
 /**
- * Upload a solo business document (EIN, lease, or Google Business login screenshot)
+ * Upload a solo business document (EIN letter or LLC certificate, image or PDF)
  */
 export const uploadBusinessDocument = async (
   req: AuthRequest,
@@ -814,13 +855,28 @@ export const uploadBusinessDocument = async (
     const relativePath = `verification-docs/businessDoc/${file.filename}`;
     const absolutePath = path.join(process.cwd(), "uploads", relativePath);
 
-    const quality = await verifyDocumentQuality(absolutePath);
-    if (!quality.passes) {
-      await localFileStorage.deleteFile(relativePath);
-      return res.status(200).json({
-        status: false,
-        message: quality.message,
-      });
+    const isPdf =
+      file.mimetype === "application/pdf" ||
+      path.extname(file.originalname).toLowerCase() === ".pdf";
+
+    if (isPdf) {
+      const pdfQuality = await verifyBusinessPdf(absolutePath);
+      if (!pdfQuality.passes) {
+        await localFileStorage.deleteFile(relativePath);
+        return res.status(200).json({
+          status: false,
+          message: pdfQuality.message,
+        });
+      }
+    } else {
+      const quality = await verifyDocumentQuality(absolutePath);
+      if (!quality.passes) {
+        await localFileStorage.deleteFile(relativePath);
+        return res.status(200).json({
+          status: false,
+          message: quality.message,
+        });
+      }
     }
 
     // Delete old business document if exists
