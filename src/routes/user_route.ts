@@ -6,6 +6,7 @@ import {
   uploadIdentityDocument,
   uploadProfessionalDocument,
   uploadBusinessDocument,
+  verifyBusinessGoogle,
   getUserProfile,
   deleteUserAccount,
   updateUserStatus,
@@ -77,12 +78,19 @@ router.post(
   uploadProfessionalDocument
 );
 
-// Upload business document (solo, requires authentication)
+// Upload business document (solo/suite, requires authentication)
 router.post(
   "/upload-business-document",
   authenticateToken,
   businessDocUpload.single("businessDocument"),
   uploadBusinessDocument
+);
+
+// Verify business via Google Business profile (suite, requires authentication)
+router.post(
+  "/verify-business-google",
+  authenticateToken,
+  verifyBusinessGoogle
 );
 
 // Delete user account (requires authentication)

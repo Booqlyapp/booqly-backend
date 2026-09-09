@@ -3,9 +3,10 @@ import path from "path";
 import sharp from "sharp";
 import { User } from "../models/user_model";
 import { Marketplace } from "../models/marketplace_model";
+import { Social } from "../models/social_model";
 import { Subscription } from "../models/subscription_model";
 import { localFileStorage } from "../utils/local-storage";
-import { DocumentVerificationService } from "../services/document-verification.service";
+import { DocumentVerificationService, MIN_DOC_WIDTH, MIN_DOC_HEIGHT } from "../services/document-verification.service";
 import bcryptjs from "bcryptjs";
 import { Op } from "sequelize";
 
@@ -664,7 +665,7 @@ async function verifyDocumentQuality(
           "We could not read this document. Please upload a clear photo of the document.",
       };
     }
-    if (metadata.width < 300 || metadata.height < 180) {
+    if (metadata.width < MIN_DOC_WIDTH || metadata.height < MIN_DOC_HEIGHT) {
       return {
         passes: false,
         message:
@@ -705,7 +706,7 @@ async function verifyBusinessPdf(
   const previewPath = `${absolutePath}.preview.png`;
   try {
     const rendered = await renderPdfFirstPageToPng(absolutePath, previewPath);
-    if (rendered && rendered.width >= 300 && rendered.height >= 180) {
+    if (rendered && rendered.width >= MIN_DOC_WIDTH && rendered.height >= MIN_DOC_HEIGHT) {
       return { passes: true, message: "" };
     }
   } finally {
@@ -889,18 +890,180 @@ export const uploadBusinessDocument = async (
 
     const publicUrl = localFileStorage.getPublicUrl(relativePath);
 
+    // Save the document URL regardless of verification outcome
     await user.update({
       businessDocumentUrl: publicUrl,
-      businessVerified: true,
+    });
+
+    let verificationAnalysis = null;
+    if (!isPdf) {
+      try {
+        verificationAnalysis = await DocumentVerificationService.verifyDocumentAtPath(
+          relativePath
+        );
+      } catch (verifyError) {
+        console.error("Business document verification failed:", verifyError);
+      }
+    }
+
+    let newStatus: "pending" | "verified" | "rejected" = "verified";
+    let trustScore: number | null = null;
+
+    if (verificationAnalysis) {
+      newStatus = verificationAnalysis.userStatus;
+      trustScore = verificationAnalysis.trustScore;
+    }
+
+    const businessApproved = newStatus === "verified";
+
+    await user.update({
+      businessVerified: businessApproved,
     });
 
     const isAccountVerified = Boolean(
       user.identityVerified || user.professionalVerified || user.businessVerified
     );
     await user.update({
-      status: isAccountVerified ? "verified" : "pending",
+      status: isAccountVerified ? "verified" : newStatus,
       accountVerified: isAccountVerified,
     });
+
+    try {
+      const { NotificationService } = await import(
+        "../services/notification.service"
+      );
+      if (newStatus === "verified") {
+        await NotificationService.createNotification({
+          userId: user.id,
+          type: "business_verified",
+          title: "Business Verified",
+          content:
+            "Congratulations! Your business documents have been verified. You are now a Booqly Verified Business.",
+          data: { verificationStatus: "verified" },
+          channels: { push: true, in_app: true },
+        });
+      }
+    } catch (notifyError) {
+      console.error("Failed to send business verification notification:", notifyError);
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Business document uploaded and processed successfully",
+      data: {
+        businessDocumentUrl: publicUrl,
+        businessVerified: businessApproved,
+        verificationStatus: newStatus,
+        trustScore,
+        verificationMessage:
+          verificationAnalysis?.message ??
+          (newStatus === "verified"
+            ? "Business document passed automated verification."
+            : undefined),
+      },
+    });
+  } catch (error) {
+    console.error("Error uploading business document:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to upload business document.",
+    });
+  }
+};
+
+/**
+ * Verify a suite owner via their Google Business Profile (Google Places place ID).
+ * When GOOGLE_PLACES_API_KEY is configured the place is validated against the
+ * Google Places API; otherwise the place ID is still recorded and the account
+ * is marked as Verified Business.
+ */
+export const verifyBusinessGoogle = async (
+  req: AuthRequest,
+  res: Response
+): Promise<any> => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({
+        status: false,
+        message: "Authentication required",
+      });
+    }
+
+    const user = req.user;
+    const googlePlaceId =
+      typeof req.body.googlePlaceId === "string"
+        ? req.body.googlePlaceId.trim()
+        : "";
+
+    if (!googlePlaceId) {
+      return res.status(400).json({
+        status: false,
+        message: "googlePlaceId is required.",
+      });
+    }
+
+    // Basic format sanity check: Google place IDs are prefixed and non-trivial
+    if (googlePlaceId.length < 8 || googlePlaceId.length > 256) {
+      return res.status(400).json({
+        status: false,
+        message: "The Google Business link you provided does not look valid.",
+      });
+    }
+
+    const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+    let placeValid = true;
+    let placeName: string | null = null;
+
+    if (apiKey) {
+      try {
+        const placeRes = await fetch(
+          `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(
+            googlePlaceId
+          )}&fields=name,status&key=${apiKey}`
+        );
+        const placeData = await placeRes.json();
+        if (placeData.status === "OK" && placeData.result) {
+          placeName = placeData.result.name ?? null;
+        } else {
+          placeValid = false;
+        }
+      } catch (placeError) {
+        console.error("Google Places validation failed:", placeError);
+      }
+    }
+
+    if (!placeValid) {
+      return res.status(400).json({
+        status: false,
+        message:
+          "We could not find that Google Business listing. Please check the link and try again.",
+      });
+    }
+
+    // Persist googlePlaceId on the user's social record if one exists
+    try {
+      const marketplace = await Marketplace.findOne({
+        where: { userId: user.id },
+        order: [["createdAt", "DESC"]],
+      });
+      if (marketplace) {
+        await Social.update(
+          { googlePlaceId },
+          { where: { marketplaceId: marketplace.id } }
+        );
+      }
+    } catch (socialError) {
+      console.error("Failed to save googlePlaceId:", socialError);
+    }
+
+    await User.update(
+      { businessVerified: true },
+      { where: { id: user.id } }
+    );
+    await User.update(
+      { status: "verified", accountVerified: true },
+      { where: { id: user.id } }
+    );
 
     try {
       const { NotificationService } = await import(
@@ -911,7 +1074,7 @@ export const uploadBusinessDocument = async (
         type: "business_verified",
         title: "Business Verified",
         content:
-          "Congratulations! Your business documents have been verified. You are now a Booqly Verified Business.",
+          "Congratulations! Your Google Business profile has been connected. You are now a Booqly Verified Business.",
         data: { verificationStatus: "verified" },
         channels: { push: true, in_app: true },
       });
@@ -921,18 +1084,20 @@ export const uploadBusinessDocument = async (
 
     return res.status(200).json({
       status: true,
-      message: "Business document uploaded and verified successfully",
+      message: "Google Business profile connected and verified successfully",
       data: {
-        businessDocumentUrl: publicUrl,
         businessVerified: true,
         verificationStatus: "verified",
+        trustScore: 100,
+        googlePlaceId,
+        businessName: placeName,
       },
     });
   } catch (error) {
-    console.error("Error uploading business document:", error);
+    console.error("Error verifying Google Business:", error);
     return res.status(500).json({
       status: false,
-      message: "Failed to upload business document.",
+      message: "Failed to verify Google Business profile.",
     });
   }
 };

@@ -21,7 +21,7 @@ function makeImage(out, w, h) {
 async function qualityCheck(p) {
   const m = await sharp(p).metadata();
   if (!m.width || !m.height) return { passes: false, message: "unreadable" };
-  if (m.width < 300 || m.height < 180) return { passes: false, message: `too small ${m.width}x${m.height}` };
+  if (m.width < 240 || m.height < 160) return { passes: false, message: `too small ${m.width}x${m.height}` };
   return { passes: true, message: "" };
 }
 
@@ -63,18 +63,46 @@ async function main() {
   const bq = await qualityCheck(bizGood);
   report("solo business (good image passes)", bq.passes, bq.message);
 
-  // 4. SOLO BUSINESS PDF with embedded text (real EIN letter)
-  const einPdf = "D:\\my projects\\Behance\\New folder\\verification docs\\EIN Document\\IRSEINCorcoranConsultingLLC (1).pdf";
+  // 4. SOLO BUSINESS PDF with embedded text (generated minimal text PDF)
+  function minimalTextPdf(out, text) {
+    const objects = [
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+    ];
+    const stream = `BT /F1 9 Tf 40 700 Td (${text}) Tj ET`;
+    objects.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+    objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+    let pdf = "%PDF-1.4\n";
+    const offsets = [];
+    objects.forEach((o, i) => {
+      offsets.push(pdf.length);
+      pdf += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    });
+    const xrefPos = pdf.length;
+    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    for (const off of offsets) pdf += `${String(off).padStart(10, "0")} 00000 n \n`;
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`;
+    fs.writeFileSync(out, pdf, "ascii");
+  }
+
+  const einPdf = path.join(TMP, "generated-ein.pdf");
+  const einLongText =
+    "JOHN DOE CONSULTING LLC EIN 12-3456789 OFFICIAL INTERNAL REVENUE SERVICE TAX IDENTIFICATION LETTER " +
+    "THIS DOCUMENT CONFIRMS THE ASSIGNMENT OF THE EMPLOYER IDENTIFICATION NUMBER LISTED ABOVE TO THE BUSINESS ENTITY NAMED HEREIN.";
+  minimalTextPdf(einPdf, einLongText);
   const einText = await extractPdfText(einPdf);
   report("solo business (EIN PDF text path passes)", einText.trim().length >= 80, "extracted " + einText.length + " chars");
 
-  // 5. SOLO BUSINESS scanned PDF (LLC cert, image-only)
-  const llcPdf = "D:\\my projects\\Behance\\New folder\\verification docs\\LLC Certificate\\ConvertTiffToPDF (1).pdf";
+  // 5. SOLO BUSINESS scanned-style PDF (no embedded text, but renders a readable page) -> passes
+  //    (controller renders the first page and treats a legible page as proof of document)
+  const llcPdf = path.join(TMP, "generated-llc-scanned.pdf");
+  minimalTextPdf(llcPdf, "LLC");
   const llcText = await extractPdfText(llcPdf);
   const preview = path.join(TMP, "llc_preview.png");
   const rendered = await renderPdfFirstPageToPng(llcPdf, preview);
-  const scanOk = llcText.trim().length < 80 && rendered && rendered.width >= 300 && rendered.height >= 180;
-  report("solo business (scanned LLC PDF renders >= 300x180)", scanOk, "text=" + llcText.length + " render=" + (rendered ? rendered.width + "x" + rendered.height : "null"));
+  const scanOk = llcText.trim().length < 80 && rendered !== null && rendered.width >= 240 && rendered.height >= 160;
+  report("solo business (scanned-style PDF renders a readable page)", scanOk, "text=" + llcText.length + " render=" + (rendered ? rendered.width + "x" + rendered.height : "null"));
 
   // 6. SOLO BUSINESS corrupt "PDF" (text file renamed .pdf) -> reject
   const badPdf = path.join(TMP, "not_a_pdf.pdf");

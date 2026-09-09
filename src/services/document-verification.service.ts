@@ -177,8 +177,10 @@ const GENERAL_DATE_PATTERN = /\b([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4}|
 const GENERAL_DATE_GLOBAL = new RegExp(GENERAL_DATE_PATTERN.source, "gi");
 const ID_NUMBER_PATTERN = /(DL|DLN|ID|LIC|LICENSE|LICENCENO|#|NO|PASSPORT(?:\s*NO)?)\s*[:\-]?\s*([A-Z]{1,4}\d{2,12}|\d{5,12})/i;
 
-const MIN_WIDTH = 240;
-const MIN_HEIGHT = 160;
+export const MIN_DOC_WIDTH = 240;
+export const MIN_DOC_HEIGHT = 160;
+const MIN_WIDTH = MIN_DOC_WIDTH;
+const MIN_HEIGHT = MIN_DOC_HEIGHT;
 const MIN_SHARPNESS = 8;
 const MAX_DIM_RATIO = 4.5;
 
