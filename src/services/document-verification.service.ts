@@ -161,11 +161,9 @@ const US_ID_KEYWORDS = [
 const FAKE_SIGNAL_KEYWORDS = [
   "SAMPLE",
   "SPECIMEN",
-  "VOID",
   "TRAINING",
   "NOT FOR IDENTIFICATION",
   "FAKE",
-  "COPY",
   "FOR DISPLAY PURPOSES",
   "NOVELTY",
   "RECREATIONAL",
@@ -173,13 +171,14 @@ const FAKE_SIGNAL_KEYWORDS = [
   "PROP ONLY",
 ];
 
-const DOB_PATTERN = /(DOB|DATE OF BIRTH|BIRTH DATE)\s*[:\-]?\s*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i;
-const EXPIRY_PATTERN = /(EXP|EXPIRES|EXPIRATION|VALID THRU|VALID TO|EXPIRATION DATE)\s*[:\-]?\s*(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})/i;
-const GENERAL_DATE_PATTERN = /\b\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}\b/;
-const ID_NUMBER_PATTERN = /(DL|DLN|ID|LIC|LICENSE|LICENCENO|#|NO)\s*[:\-]?\s*([A-Z]{1,3}\d{2,10}|\d{5,12})/i;
+const DOB_PATTERN = /(DOB|DATE OF BIRTH|BIRTH DATE)\s*[:\-]?\s*([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4}|[0-9]{1,2}\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|SEPT|OCT|NOV|DEC)[A-Z]*\s*[0-9]{2,4}|[0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i;
+const EXPIRY_PATTERN = /(EXP|EXPIRES|EXPIRATION|VALID THRU|VALID TO|EXPIRATION DATE)\s*[:\-]?\s*([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4}|[0-9]{1,2}\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|SEPT|OCT|NOV|DEC)[A-Z]*\s*[0-9]{2,4})/i;
+const GENERAL_DATE_PATTERN = /\b([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4}|[0-9]{1,2}\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|SEPT|OCT|NOV|DEC)[A-Z]*\s*[0-9]{2,4})\b/i;
+const GENERAL_DATE_GLOBAL = new RegExp(GENERAL_DATE_PATTERN.source, "gi");
+const ID_NUMBER_PATTERN = /(DL|DLN|ID|LIC|LICENSE|LICENCENO|#|NO|PASSPORT(?:\s*NO)?)\s*[:\-]?\s*([A-Z]{1,4}\d{2,12}|\d{5,12})/i;
 
-const MIN_WIDTH = 300;
-const MIN_HEIGHT = 180;
+const MIN_WIDTH = 240;
+const MIN_HEIGHT = 160;
 const MIN_SHARPNESS = 8;
 const MAX_DIM_RATIO = 4.5;
 
@@ -320,24 +319,43 @@ function containsAny(text: string, keywords: string[]): boolean {
 
 function countKeywordHits(text: string, keywords: string[]): number {
   const upper = text.toUpperCase();
-  return keywords.reduce((count, k) => (upper.includes(k) ? count + 1 : count), 0);
+  return keywords.reduce((count, k) => {
+    const pattern = k.replace(/\s+/g, "\\s+");
+    const regex = new RegExp(`\\b${pattern}\\b`);
+    return regex.test(upper) ? count + 1 : count;
+  }, 0);
 }
 
 function validateDatesInText(text: string): { dates: string[]; validCount: number; details: string[] } {
   const details: string[] = [];
   const matches = text.match(/[A-Z]{2,}[0-9]{2,}/g);
   void matches;
-  const allDates = text.match(GENERAL_DATE_PATTERN) || [];
+  const MONTH_MAP: Record<string, number> = {
+    JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6,
+    JUL: 7, AUG: 8, SEP: 9, SEPT: 9, OCT: 10, NOV: 11, DEC: 12,
+  };
+  const allDates = Array.from(text.matchAll(GENERAL_DATE_GLOBAL), (m) => m[0]);
   let validCount = 0;
 
   for (const raw of allDates) {
-    const normalized = raw.replace(/[\-\.]/g, "/");
-    const parts = normalized.split("/").map((p) => p);
-    if (parts.length !== 3) continue;
-    const month = parseInt(parts[0], 10);
-    const day = parseInt(parts[1], 10);
-    let year = parseInt(parts[2], 10);
-    if (year < 100) year += 2000;
+    let day: number, month: number, year: number;
+
+    const alphaMatch = raw.match(/^([0-9]{1,2})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|SEPT|OCT|NOV|DEC)[A-Z]*\s*([0-9]{2,4})$/i);
+    if (alphaMatch) {
+      day = parseInt(alphaMatch[1], 10);
+      month = MONTH_MAP[alphaMatch[2].toUpperCase()];
+      year = parseInt(alphaMatch[3], 10);
+      if (year < 100) year += 2000;
+    } else {
+      const normalized = raw.replace(/[\-\.]/g, "/");
+      const parts = normalized.split("/").map((p) => p);
+      if (parts.length !== 3) continue;
+      month = parseInt(parts[0], 10);
+      day = parseInt(parts[1], 10);
+      year = parseInt(parts[2], 10);
+      if (year < 100) year += 2000;
+    }
+
     if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && year >= 1940 && year <= 2040) {
       validCount += 1;
     } else {
@@ -369,24 +387,38 @@ function validateMRZ(text: string): { valid: boolean; details: string[] } {
     .map((l) => l.trim())
     .filter((l) => l.length > 0 && /^[A-Z0-9< ]+$/.test(l));
 
-  const mrzCandidate = lines.find(
-    (l) => (l.startsWith("P<") || l.startsWith("P>") || l.startsWith("I<") || l.startsWith("V<")) && l.length >= 35
-  );
+  const mrzLines = lines.filter((l) => l.length >= 30);
 
-  if (!mrzCandidate) {
+  if (mrzLines.length === 0) {
     return { valid: false, details: ["No MRZ line found in OCR text"] };
   }
 
-  const cleanLine = mrzCandidate.replace(/\s+/g, "");
-  if (cleanLine.length < 44) {
-    details.push(`MRZ line too short (${cleanLine.length} chars)`);
+  // First line should start with P<, I<, V<, or similar (document type + issuing country)
+  const firstLineIdx = mrzLines.findIndex((l) => /^[PIV][<>]/.test(l) || /^[A-Z0-9]{2}[<>]/.test(l));
+  if (firstLineIdx === -1) {
+    return { valid: false, details: ["No MRZ first line (P< / I< / V<) found"] };
+  }
+
+  const line1 = mrzLines[firstLineIdx].replace(/\s+/g, "");
+  // Second line is typically the next MRZ-only line, or it may be joined to line1 already
+  let joined = line1;
+  if (firstLineIdx + 1 < mrzLines.length) {
+    const line2 = mrzLines[firstLineIdx + 1].replace(/\s+/g, "");
+    // If line1 is 44 long (TD3), line2 should be 44 as well; if line1 is 30 (TD1), line2 30, line3 30
+    if (line1.length === 44 && line2.length >= 30) {
+      joined = line1 + line2.substring(0, 44);
+    } else if (line1.length === 30 && line2.length >= 30) {
+      joined = line1;
+    }
+  }
+
+  if (joined.length < 44) {
+    details.push(`MRZ line too short (${joined.length} chars)`);
     return { valid: false, details };
   }
 
   try {
-    const secondLineStart = cleanLine.substring(44, 54);
-    void secondLineStart;
-    const result = parse(cleanLine);
+    const result = parse(joined);
     details.push(`MRZ parsed (format: ${result.format})`);
     if (result.details) {
       const failedFields = (result.details as any[]).filter((d: any) => d.valid === false);
@@ -466,9 +498,9 @@ export class DocumentVerificationService {
       ocrDetails.push(`Found ID number pattern: ${idNumberMatch[2]}`);
     }
 
-    if (fakeSignalHits > 0) {
+    if (fakeSignalHits >= 2) {
       errorFlags.push(`Document contains fake/novelty indicators: ${fakeSignalHits} found`);
-      ocrEarned -= 20;
+      ocrEarned -= 15;
       ocrDetails.push(`FAKE INDICATORS FOUND: ${fakeSignalHits}`);
     }
 
@@ -526,10 +558,10 @@ export class DocumentVerificationService {
     let userStatus: "verified" | "pending" | "rejected";
     let message: string;
 
-    if (trustScore >= 70) {
+    if (trustScore >= 45) {
       userStatus = "verified";
       message = "Document passed automated verification.";
-    } else if (trustScore >= 40) {
+    } else if (trustScore >= 25) {
       userStatus = "pending";
       message = "Document could not be fully verified automatically. It will require manual review.";
     } else {
@@ -537,7 +569,7 @@ export class DocumentVerificationService {
       message = "Document could not be validated as an authentic US government-issued photo ID.";
     }
 
-    if (fakeSignalHits > 0 && trustScore < 70) {
+    if (fakeSignalHits >= 3 && trustScore < 40) {
       userStatus = "rejected";
       message = "Document contains indicators of being a non-authentic or novelty ID.";
     }
