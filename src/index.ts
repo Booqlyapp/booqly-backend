@@ -7,6 +7,7 @@ import { ensureReviewFlagsTable } from "./utils/ensure-review-flags-table";
 import { ensureContentReportsTable } from "./utils/ensure-content-reports-table";
 import { ensureAnnouncementsTable } from "./utils/ensure-announcements-table";
 import { ensureSupportTicketsTables } from "./utils/ensure-support-tickets-tables";
+import { ensureVideosShortCodeColumn, backfillVideoShortCodes } from "./utils/ensure-video-short-codes";
 import { initModels } from "./models/index";
 import routes from "./routes/index";
 import { SocketService } from "./services/socket.service";
@@ -106,6 +107,8 @@ sequelize
     await ensureContentReportsTable(sequelize);
     await ensureAnnouncementsTable(sequelize);
     await ensureSupportTicketsTables(sequelize);
+    await ensureVideosShortCodeColumn(sequelize);
+    void backfillVideoShortCodes(sequelize);
     console.log(`✅ ${process.env.NODE_ENV} Database connected successfully`);
     console.log(`📊 Database: ${sequelize.getDatabaseName()}`);
     WaitlistService.startProcessor();

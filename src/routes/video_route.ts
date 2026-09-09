@@ -8,6 +8,7 @@ import {
   getCommentReplies,
   getFeedVideos,
   getVideoById,
+  getVideoByShortCode,
   getVideoComments,
   getReelUserProfile,
   getVideosByUser,
@@ -42,6 +43,7 @@ router.get("/users/:userId/profile", optionalAuth, getReelUserProfile);
 router.post("/users/:userId/follow", authenticateToken, followReelUser);
 router.delete("/users/:userId/follow", authenticateToken, unfollowReelUser);
 router.get("/feed", optionalAuth, getFeedVideos);
+router.get("/by-short-code/:code", optionalAuth, getVideoByShortCode);
 router.get("/:videoId", optionalAuth, getVideoById);
 router.patch("/:videoId", authenticateToken, updateVideo);
 router.delete("/:videoId", authenticateToken, deleteVideo);

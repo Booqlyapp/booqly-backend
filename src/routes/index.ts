@@ -21,6 +21,7 @@ import CategoryRoute from "./category_route";
 import PromotionRoute from "./promotion_route";
 import PromoUrlRoute from "./promo_url_route";
 import PublicPromoRoute from "./public_promo_route";
+import PublicReelRoute from "./public_reel_route";
 import PromoBookingRoute from "./promo_booking_route";
 import AssetlinksRoute from "./assetlinks_route";
 import FriendRoute from "./friend_route";
@@ -70,6 +71,7 @@ router.use("/search", SearchRoute);
 router.use("/promotions", PromotionRoute);
 router.use("/promo-url", PromoUrlRoute);
 router.use("/", PublicPromoRoute); // For public /promo endpoint
+router.use("/", PublicReelRoute); // For public /r/:code reel short links
 router.use("/", PromoBookingRoute); // For promo booking data endpoint
 router.use("/", AssetlinksRoute); // For Android App Links verification
 router.use("/friends", FriendRoute);

@@ -15,6 +15,7 @@ interface VideoAttributes {
   location: string | null;
   tags: string[];
   thumbnailUrl: string | null;
+  shortCode: string | null;
   likeCount: number;
   commentCount: number;
   createdAt: CreationOptional<Date>;
@@ -32,6 +33,7 @@ export class Video
   declare location: string | null;
   declare tags: CreationOptional<string[]>;
   declare thumbnailUrl: string | null;
+  declare shortCode: CreationOptional<string | null>;
   declare likeCount: CreationOptional<number>;
   declare commentCount: CreationOptional<number>;
   declare createdAt: CreationOptional<Date>;
@@ -80,6 +82,10 @@ export default function initVideo(sequelize: Sequelize) {
       },
       thumbnailUrl: {
         type: DataTypes.TEXT,
+        allowNull: true,
+      },
+      shortCode: {
+        type: DataTypes.STRING(16),
         allowNull: true,
       },
       likeCount: {

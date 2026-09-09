@@ -51,6 +51,36 @@ const parsePositiveInteger = (value: unknown, fallback: number, max: number): nu
   return Math.min(parsedValue, max);
 };
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const isUuid = (value: string): boolean => UUID_REGEX.test(value);
+
+/** Ambiguity-free alphabet (no 0/O/1/l/I) for TikTok-style reel share codes. */
+const SHORT_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+const SHORT_CODE_LENGTH = 8;
+
+const generateShortCode = (): string => {
+  let code = "";
+  for (let i = 0; i < SHORT_CODE_LENGTH; i += 1) {
+    code += SHORT_CODE_ALPHABET[Math.floor(Math.random() * SHORT_CODE_ALPHABET.length)];
+  }
+  return code;
+};
+
+const findUniqueShortCode = async (): Promise<string> => {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const code = generateShortCode();
+    const existing = await Video.findOne({
+      where: { shortCode: code },
+      attributes: ["id"],
+    });
+    if (!existing) {
+      return code;
+    }
+  }
+  throw new Error("Could not allocate a unique video short code");
+};
+
 /** Accepts a string (comma- and/or space-separated, TikTok-style - e.g.
  * "#barber #haircut, salon") or an array of strings, and returns a
  * cleaned, deduplicated array (trimmed, no empties, no leading '#'). */
@@ -177,6 +207,7 @@ export const uploadVideo = async (req: AuthenticatedRequest, res: Response): Pro
         thumbnailUrl: thumbnailFile
           ? toPublicFileUrl("video-thumbnails", thumbnailFile.filename)
           : thumbnailUrl,
+        shortCode: await findUniqueShortCode(),
         likeCount: 0,
         commentCount: 0,
       },
@@ -464,6 +495,80 @@ export const getVideoById = async (req: AuthenticatedRequest, res: Response): Pr
     });
   } catch (error) {
     console.error("Error retrieving video:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to retrieve video",
+    });
+  }
+};
+
+/** Public TikTok-style short link resolver: /r/:code → redirects to the video file. */
+export const redirectToReelShortLink = async (req: Request, res: Response): Promise<Response> => {
+  try {
+    const rawCode = String(req.params.code ?? "").trim();
+    if (!rawCode) {
+      return res.status(404).send("Reel not found");
+    }
+
+    const shortCodeMatch = await Video.findOne({
+      where: { shortCode: rawCode },
+      attributes: ["id", "videoUrl"],
+    });
+
+    const video = shortCodeMatch ?? (isUuid(rawCode) ? await Video.findByPk(rawCode, { attributes: ["id", "videoUrl"] }) : null);
+
+    if (!video || !video.videoUrl) {
+      return res.status(404).send("Reel not found");
+    }
+
+    res.redirect(302, video.videoUrl);
+    return res;
+  } catch (error) {
+    console.error("Error resolving reel short link:", error);
+    return res.status(500).send("Could not resolve reel link");
+  }
+};
+
+/** Resolves a short code to the full video, for opening reels from in-app deep links. */
+export const getVideoByShortCode = async (
+  req: AuthenticatedRequest,
+  res: Response
+): Promise<Response> => {
+  try {
+    const rawCode = String(req.params.code ?? "").trim();
+    const video = await Video.findOne({
+      where: { shortCode: rawCode },
+      include: [getVideoOwnerInclude()],
+    });
+
+    if (!video) {
+      return res.status(404).json({
+        status: false,
+        message: "Video not found",
+      });
+    }
+
+    let isLikedByCurrentUser = false;
+    if (req.userId) {
+      const like = await VideoLike.findOne({
+        where: {
+          videoId: video.id,
+          userId: req.userId,
+        },
+      });
+      isLikedByCurrentUser = !!like;
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Video retrieved successfully",
+      data: {
+        ...video.toJSON(),
+        isLikedByCurrentUser,
+      },
+    });
+  } catch (error) {
+    console.error("Error retrieving video by short code:", error);
     return res.status(500).json({
       status: false,
       message: "Failed to retrieve video",
