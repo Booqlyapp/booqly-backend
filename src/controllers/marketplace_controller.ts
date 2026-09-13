@@ -2150,11 +2150,28 @@ export const getMarketplaceById = async (req: any, res: Response) => {
         },
         {
           model: User,
+          as: 'provider',
+          attributes: [
+            'id',
+            'role',
+            'name',
+            'email',
+            'currentSubscriptionId',
+            'status',
+            'accountVerified',
+            'professionalVerified',
+            'businessVerified',
+          ],
+          required: false,
+        },
+        {
+          model: User,
           as: 'user',
           attributes: [
             'id',
             'role',
             'name',
+            'email',
             'currentSubscriptionId',
             'status',
             'accountVerified',
@@ -2203,6 +2220,10 @@ export const getMarketplaceById = async (req: any, res: Response) => {
     }
 
     const responseData = { ...marketplace.toJSON() } as any;
+    // Owner is Marketplace.userId (`provider`). `user` is Users.marketplaceId and
+    // can be missing or a team member. Prefer the owner for verification badges.
+    const ownerUser = responseData.provider ?? responseData.user;
+    responseData.user = ownerUser;
     
     // Check for active subscription if user exists
     if (responseData.user && responseData.user.currentSubscriptionId) {

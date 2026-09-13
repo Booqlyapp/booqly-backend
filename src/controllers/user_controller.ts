@@ -1145,6 +1145,7 @@ export const getClientProfileById = async (
         "status",
         "profilePic",
         "accountVerified",
+        "identityVerified",
         "insta",
         "tiktok",
         "facebook",
@@ -1169,6 +1170,85 @@ export const getClientProfileById = async (
     });
   } catch (error) {
     console.error("Error getting client profile:", error);
+    res.status(500).json({
+      status: false,
+      message: "Internal server error",
+    });
+  }
+};
+
+/**
+ * Public profile for any authenticated user (chat avatar, etc.).
+ * Does not expose verification document URLs.
+ */
+export const getPublicProfileById = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({
+        status: false,
+        message: "Authentication required",
+      });
+      return;
+    }
+
+    const { userId } = req.params;
+    const profile = await User.findOne({
+      where: {
+        id: userId,
+        deletedAt: null,
+      },
+      attributes: [
+        "id",
+        "name",
+        "email",
+        "phone",
+        "status",
+        "profilePic",
+        "accountVerified",
+        "identityVerified",
+        "professionalVerified",
+        "businessVerified",
+        "currentSubscriptionId",
+        "insta",
+        "tiktok",
+        "facebook",
+        "createdAt",
+        "updatedAt",
+        "role",
+      ],
+    });
+
+    if (!profile) {
+      res.status(404).json({
+        status: false,
+        message: "User not found",
+      });
+      return;
+    }
+
+    const data = profile.toJSON() as Record<string, unknown>;
+    if (profile.currentSubscriptionId) {
+      const activeSubscription = await Subscription.findOne({
+        where: {
+          id: profile.currentSubscriptionId,
+          status: "active",
+        },
+      });
+      data.hasActiveSubscription = !!activeSubscription;
+    } else {
+      data.hasActiveSubscription = false;
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "Profile retrieved successfully",
+      data,
+    });
+  } catch (error) {
+    console.error("Error getting public profile:", error);
     res.status(500).json({
       status: false,
       message: "Internal server error",

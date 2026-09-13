@@ -15,6 +15,7 @@ import {
   changeUserPassword,
   getClientUsers,
   getClientProfileById,
+  getPublicProfileById,
   updateUserFcmToken,
 } from "../controllers/user_controller";
 import validateUser from "../middlewares/validate_user";
@@ -35,6 +36,14 @@ const router = Router();
 
 // Get user profile (requires authentication)
 router.get("/profile", authenticateToken, getUserProfile);
+
+// Public profile for chat / avatar taps (any authenticated user)
+router.get(
+  "/public/:userId",
+  authenticateToken,
+  validateUUID("userId"),
+  getPublicProfileById
+);
 
 // Get a client's profile (providers only)
 router.get(

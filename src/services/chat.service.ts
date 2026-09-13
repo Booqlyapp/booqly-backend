@@ -6,6 +6,18 @@ import { SubscriptionService } from './subscription.service';
 import { NotificationService } from './notification.service';
 import { Op } from 'sequelize';
 
+const CHAT_USER_ATTRIBUTES = [
+  'id',
+  'name',
+  'email',
+  'profilePic',
+  'role',
+  'status',
+  'identityVerified',
+  'professionalVerified',
+  'businessVerified',
+] as const;
+
 export class ChatService {
 
   /**
@@ -62,8 +74,8 @@ export class ChatService {
           providerId,
         },
         include: [
-          { model: User, as: 'client', attributes: ['id', 'name', 'email', 'profilePic'] },
-          { model: User, as: 'provider', attributes: ['id', 'name', 'email', 'profilePic'] },
+          { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
+          { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
         ],
       });
 
@@ -80,16 +92,16 @@ export class ChatService {
         // Fetch with includes
         conversation = await Conversation.findByPk(conversation.id, {
           include: [
-            { model: User, as: 'client', attributes: ['id', 'name', 'email', 'profilePic'] },
-            { model: User, as: 'provider', attributes: ['id', 'name', 'email', 'profilePic'] },
+            { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
+            { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
           ],
         });
       } else if (isFriendChat) {
         await this.resetFriendConversationLimits(conversation);
         await conversation.reload({
           include: [
-            { model: User, as: 'client', attributes: ['id', 'name', 'email', 'profilePic'] },
-            { model: User, as: 'provider', attributes: ['id', 'name', 'email', 'profilePic'] },
+            { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
+            { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
           ],
         });
       }
@@ -193,7 +205,7 @@ export class ChatService {
       // Fetch message with sender info
       const messageWithSender = await Message.findByPk(message.id, {
         include: [
-          { model: User, as: 'sender', attributes: ['id', 'name', 'profilePic'] },
+          { model: User, as: 'sender', attributes: [...CHAT_USER_ATTRIBUTES] },
         ],
       });
 
@@ -234,7 +246,7 @@ export class ChatService {
       const { count, rows: messages } = await Message.findAndCountAll({
         where: { conversationId },
         include: [
-          { model: User, as: 'sender', attributes: ['id', 'name', 'profilePic'] },
+          { model: User, as: 'sender', attributes: [...CHAT_USER_ATTRIBUTES] },
         ],
         order: [['createdAt', 'ASC']],
         limit,
@@ -271,8 +283,8 @@ export class ChatService {
           ],
         },
         include: [
-          { model: User, as: 'client', attributes: ['id', 'name', 'profilePic'] },
-          { model: User, as: 'provider', attributes: ['id', 'name', 'profilePic'] },
+          { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
+          { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
           {
             model: Message,
             as: 'messages',
