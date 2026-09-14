@@ -66,6 +66,8 @@ const getUploadSubfolder = (purpose: string): string => {
       return 'verification-docs';
     case 'chat-images':
       return 'chat-images';
+    case 'chat-videos':
+      return 'chat-videos';
     case 'support-attachments':
       return 'support-attachments';
     case 'videos':
@@ -413,6 +415,19 @@ export const createChatImageUpload = () => {
       fileSize: MAX_FILE_SIZE,
     },
     fileFilter,
+  });
+};
+
+/**
+ * Create multer upload middleware for chat videos
+ */
+export const createChatVideoUpload = () => {
+  return multer({
+    storage: createMulterStorage('chat-videos'),
+    limits: {
+      fileSize: MAX_VIDEO_FILE_SIZE,
+    },
+    fileFilter: videoMediaFileFilter,
   });
 };
 

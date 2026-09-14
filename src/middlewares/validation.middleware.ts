@@ -249,11 +249,19 @@ export const schemas = {
       then: Joi.required(),
       otherwise: Joi.optional().allow('', null),
     }),
-    messageType: Joi.string().valid('text', 'image', 'reel').default('text'),
+    messageType: Joi.string().valid('text', 'image', 'reel', 'video').default('text'),
     attachments: Joi.object().when('messageType', {
       is: 'image',
       then: Joi.required(),
       otherwise: Joi.when('messageType', {
+        is: 'video',
+        then: Joi.object({
+          videoUrl: Joi.string().required(),
+          mimeType: Joi.string().allow('', null).optional(),
+          fileName: Joi.string().allow('', null).optional(),
+          fileSize: Joi.number().optional(),
+        }).required(),
+        otherwise: Joi.when('messageType', {
         is: 'reel',
         then: Joi.object({
           videoId: Joi.string().uuid().required(),
@@ -265,6 +273,7 @@ export const schemas = {
           shareLink: Joi.string().allow('', null).optional(),
         }).required(),
         otherwise: Joi.optional(),
+      }),
       }),
     }),
   }),

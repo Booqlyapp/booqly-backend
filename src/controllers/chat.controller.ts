@@ -172,6 +172,14 @@ export const sendMessage = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
+    if (messageType === 'video' && (!attachments || !attachments.videoUrl)) {
+      res.status(400).json({
+        status: false,
+        message: 'Video URL is required for video messages',
+      });
+      return;
+    }
+
     if (messageType === 'reel' && (!attachments || !attachments.videoId)) {
       res.status(400).json({
         status: false,
@@ -199,9 +207,14 @@ export const sendMessage = async (req: AuthRequest, res: Response): Promise<void
     }
 
     // Emit Socket.IO event for real-time messaging
+    // Emit a plain JSON payload so receivers can parse attachments/videoUrl.
     if ((global as any).socketService) {
+      const payload =
+        typeof result.message?.toJSON === "function"
+          ? result.message.toJSON()
+          : result.message;
       (global as any).socketService.sendMessageToConversation(conversationId, {
-        data: result.message,
+        data: payload,
         conversationId: conversationId,
       });
     }
@@ -468,6 +481,53 @@ export const uploadChatImage = async (req: AuthRequest, res: Response): Promise<
     });
   } catch (error) {
     console.error('Error uploading chat image:', error);
+    res.status(500).json({
+      status: false,
+      message: 'Internal server error',
+      ...(process.env.SEND_ERRORS === 'true' && {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+    });
+  }
+};
+
+/**
+ * Upload video for chat
+ */
+export const uploadChatVideo = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({
+        status: false,
+        message: 'Authentication required',
+      });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({
+        status: false,
+        message: 'No video file provided',
+      });
+      return;
+    }
+
+    const file = req.file;
+    const relativePath = path.join('chat-videos', file.filename).replace(/\\/g, '/');
+    const videoUrl = localFileStorage.getPublicUrl(relativePath);
+
+    res.status(200).json({
+      status: true,
+      message: 'Video uploaded successfully',
+      data: {
+        videoUrl,
+        fileName: file.originalname,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+      },
+    });
+  } catch (error) {
+    console.error('Error uploading chat video:', error);
     res.status(500).json({
       status: false,
       message: 'Internal server error',

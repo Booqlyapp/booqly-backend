@@ -8,12 +8,14 @@ import {
   getUnreadMessageCount,
   updateConversationStatus,
   uploadChatImage,
+  uploadChatVideo,
 } from '../controllers/chat.controller';
 import { authenticateToken } from '../middlewares/auth.middleware';
 import { validate, schemas } from '../middlewares/validation.middleware';
-import { upload } from '../utils/multer-config';
+import { upload, createChatVideoUpload } from '../utils/multer-config';
 
 const router = Router();
+const videoUpload = createChatVideoUpload();
 
 // All chat routes require authentication
 router.use(authenticateToken);
@@ -41,5 +43,8 @@ router.put('/conversations/:conversationId/status', updateConversationStatus);
 
 // Upload image for chat
 router.post('/upload-image', upload.single('image'), uploadChatImage);
+
+// Upload video for chat
+router.post('/upload-video', videoUpload.single('video'), uploadChatVideo);
 
 export default router;
