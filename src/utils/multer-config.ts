@@ -427,7 +427,18 @@ export const createChatVideoUpload = () => {
     limits: {
       fileSize: MAX_VIDEO_FILE_SIZE,
     },
-    fileFilter: videoMediaFileFilter,
+    fileFilter: (req: any, file: any, cb: any) => {
+      const mime = (file.mimetype || '').toLowerCase();
+      if (
+        mime.startsWith('video/') ||
+        mime === 'application/octet-stream' ||
+        isAllowedVideoExtension(file.originalname)
+      ) {
+        cb(null, true);
+        return;
+      }
+      cb(new Error(`Invalid video type "${file.mimetype}". Only video files are allowed.`), false);
+    },
   });
 };
 

@@ -45,6 +45,17 @@ router.put('/conversations/:conversationId/status', updateConversationStatus);
 router.post('/upload-image', upload.single('image'), uploadChatImage);
 
 // Upload video for chat
-router.post('/upload-video', videoUpload.single('video'), uploadChatVideo);
+router.post('/upload-video', (req, res, next) => {
+  videoUpload.single('video')(req, res, (err: any) => {
+    if (err) {
+      res.status(400).json({
+        status: false,
+        message: err.message || 'Failed to upload video',
+      });
+      return;
+    }
+    next();
+  });
+}, uploadChatVideo);
 
 export default router;

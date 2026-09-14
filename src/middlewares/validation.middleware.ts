@@ -260,7 +260,7 @@ export const schemas = {
           mimeType: Joi.string().allow('', null).optional(),
           fileName: Joi.string().allow('', null).optional(),
           fileSize: Joi.number().optional(),
-        }).required(),
+        }).unknown(true).required(),
         otherwise: Joi.when('messageType', {
         is: 'reel',
         then: Joi.object({
