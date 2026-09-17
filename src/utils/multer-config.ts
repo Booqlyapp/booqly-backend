@@ -28,6 +28,7 @@ export const ALLOWED_PDF_MIMETYPES = [
 
 export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 export const MAX_VIDEO_FILE_SIZE = 250 * 1024 * 1024; // 250MB
+export const MAX_AUDIO_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 export const MAX_IMAGES = 10;
 
 /**
@@ -68,6 +69,8 @@ const getUploadSubfolder = (purpose: string): string => {
       return 'chat-images';
     case 'chat-videos':
       return 'chat-videos';
+    case 'chat-audio':
+      return 'chat-audio';
     case 'support-attachments':
       return 'support-attachments';
     case 'videos':
@@ -438,6 +441,32 @@ export const createChatVideoUpload = () => {
         return;
       }
       cb(new Error(`Invalid video type "${file.mimetype}". Only video files are allowed.`), false);
+    },
+  });
+};
+
+/**
+ * Create multer upload middleware for chat voice notes
+ */
+export const createChatAudioUpload = () => {
+  return multer({
+    storage: createMulterStorage('chat-audio'),
+    limits: {
+      fileSize: MAX_AUDIO_FILE_SIZE,
+    },
+    fileFilter: (req: any, file: any, cb: any) => {
+      const mime = (file.mimetype || '').toLowerCase();
+      const ext = path.extname(file.originalname || '').toLowerCase();
+      const allowedExt = ['.m4a', '.aac', '.mp3', '.wav', '.caf', '.ogg', '.webm'];
+      if (
+        mime.startsWith('audio/') ||
+        mime === 'application/octet-stream' ||
+        allowedExt.includes(ext)
+      ) {
+        cb(null, true);
+        return;
+      }
+      cb(new Error(`Invalid audio type "${file.mimetype}". Only audio files are allowed.`), false);
     },
   });
 };

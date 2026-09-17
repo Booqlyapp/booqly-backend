@@ -80,7 +80,7 @@ export class SocketService {
       socket.on('send_message', async (data: {
         conversationId: string;
         content: string;
-        messageType?: 'text' | 'image' | 'reel' | 'video';
+        messageType?: 'text' | 'image' | 'reel' | 'video' | 'voice';
         attachments?: any;
       }) => {
         try {

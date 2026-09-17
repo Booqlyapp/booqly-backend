@@ -120,7 +120,7 @@ export class ChatService {
     conversationId: string,
     senderId: string,
     content: string,
-    messageType: 'text' | 'image' | 'reel' | 'video' = 'text',
+    messageType: 'text' | 'image' | 'reel' | 'video' | 'voice' = 'text',
     attachments?: any
   ): Promise<{
     message: Message;

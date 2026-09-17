@@ -12,7 +12,7 @@ interface MessageAttributes {
   conversationId: string;
   senderId: string;
   content: string | null;
-  messageType: "text" | "image" | "system" | "reel" | "video";
+  messageType: "text" | "image" | "system" | "reel" | "video" | "voice";
   attachments: object | null;
   isRead: boolean;
   createdAt: CreationOptional<Date>;
@@ -28,7 +28,7 @@ export class Message
   declare conversationId: string;
   declare senderId: string;
   declare content: string | null;
-  declare messageType: "text" | "image" | "system" | "reel" | "video";
+  declare messageType: "text" | "image" | "system" | "reel" | "video" | "voice";
   declare attachments: object | null;
   declare isRead: boolean;
   declare createdAt: CreationOptional<Date>;
@@ -67,7 +67,7 @@ export default function initMessage(sequelize: Sequelize) {
         allowNull: true,
       },
       messageType: {
-        type: DataTypes.ENUM("text", "image", "system", "reel", "video"),
+        type: DataTypes.ENUM("text", "image", "system", "reel", "video", "voice"),
         allowNull: false,
         defaultValue: "text",
       },

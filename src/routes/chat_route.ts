@@ -9,13 +9,15 @@ import {
   updateConversationStatus,
   uploadChatImage,
   uploadChatVideo,
+  uploadChatAudio,
 } from '../controllers/chat.controller';
 import { authenticateToken } from '../middlewares/auth.middleware';
 import { validate, schemas } from '../middlewares/validation.middleware';
-import { upload, createChatVideoUpload } from '../utils/multer-config';
+import { upload, createChatVideoUpload, createChatAudioUpload } from '../utils/multer-config';
 
 const router = Router();
 const videoUpload = createChatVideoUpload();
+const audioUpload = createChatAudioUpload();
 
 // All chat routes require authentication
 router.use(authenticateToken);
@@ -57,5 +59,18 @@ router.post('/upload-video', (req, res, next) => {
     next();
   });
 }, uploadChatVideo);
+
+router.post('/upload-audio', (req, res, next) => {
+  audioUpload.single('audio')(req, res, (err: any) => {
+    if (err) {
+      res.status(400).json({
+        status: false,
+        message: err.message || 'Failed to upload audio',
+      });
+      return;
+    }
+    next();
+  });
+}, uploadChatAudio);
 
 export default router;

@@ -249,7 +249,7 @@ export const schemas = {
       then: Joi.required(),
       otherwise: Joi.optional().allow('', null),
     }),
-    messageType: Joi.string().valid('text', 'image', 'reel', 'video').default('text'),
+    messageType: Joi.string().valid('text', 'image', 'reel', 'video', 'voice').default('text'),
     attachments: Joi.object().when('messageType', {
       is: 'image',
       then: Joi.required(),
@@ -262,6 +262,15 @@ export const schemas = {
           fileSize: Joi.number().optional(),
         }).unknown(true).required(),
         otherwise: Joi.when('messageType', {
+          is: 'voice',
+          then: Joi.object({
+            audioUrl: Joi.string().required(),
+            duration: Joi.number().optional(),
+            mimeType: Joi.string().allow('', null).optional(),
+            fileName: Joi.string().allow('', null).optional(),
+            fileSize: Joi.number().optional(),
+          }).unknown(true).required(),
+          otherwise: Joi.when('messageType', {
         is: 'reel',
         then: Joi.object({
           videoId: Joi.string().uuid().required(),

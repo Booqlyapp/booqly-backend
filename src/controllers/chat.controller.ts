@@ -180,6 +180,14 @@ export const sendMessage = async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
+    if (messageType === 'voice' && (!attachments || !attachments.audioUrl)) {
+      res.status(400).json({
+        status: false,
+        message: 'Audio URL is required for voice messages',
+      });
+      return;
+    }
+
     if (messageType === 'reel' && (!attachments || !attachments.videoId)) {
       res.status(400).json({
         status: false,
@@ -528,6 +536,53 @@ export const uploadChatVideo = async (req: AuthRequest, res: Response): Promise<
     });
   } catch (error) {
     console.error('Error uploading chat video:', error);
+    res.status(500).json({
+      status: false,
+      message: 'Internal server error',
+      ...(process.env.SEND_ERRORS === 'true' && {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+    });
+  }
+};
+
+/**
+ * Upload voice note for chat
+ */
+export const uploadChatAudio = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({
+        status: false,
+        message: 'Authentication required',
+      });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({
+        status: false,
+        message: 'No audio file provided',
+      });
+      return;
+    }
+
+    const file = req.file;
+    const relativePath = path.join('chat-audio', file.filename).replace(/\\/g, '/');
+    const audioUrl = localFileStorage.getPublicUrl(relativePath);
+
+    res.status(200).json({
+      status: true,
+      message: 'Audio uploaded successfully',
+      data: {
+        audioUrl,
+        fileName: file.originalname,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+      },
+    });
+  } catch (error) {
+    console.error('Error uploading chat audio:', error);
     res.status(500).json({
       status: false,
       message: 'Internal server error',
