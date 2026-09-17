@@ -408,6 +408,7 @@ export const updateTeamMemberPermissions = async (req: any, res: Response): Prom
       "manageSocialLinks",
       "viewReviews",
       "manageRedeemCodes",
+      "manageServices",
     ];
 
     const updateData: any = {};
@@ -489,6 +490,7 @@ export const getMyPermissions = async (req: any, res: Response): Promise<Respons
           manageSocialLinks: false,
           viewReviews: false,
           manageRedeemCodes: false,
+          manageServices: false,
         },
       });
     }

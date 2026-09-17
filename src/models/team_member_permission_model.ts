@@ -22,6 +22,7 @@ interface TeamMemberPermissionAttributes {
   manageSocialLinks: boolean;
   viewReviews: boolean;
   manageRedeemCodes: boolean;
+  manageServices: boolean;
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
 }
@@ -44,6 +45,7 @@ export class TeamMemberPermission
   declare manageSocialLinks: CreationOptional<boolean>;
   declare viewReviews: CreationOptional<boolean>;
   declare manageRedeemCodes: CreationOptional<boolean>;
+  declare manageServices: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -129,6 +131,11 @@ export default function initTeamMemberPermission(sequelize: Sequelize) {
         defaultValue: false,
       },
       manageRedeemCodes: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      manageServices: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
