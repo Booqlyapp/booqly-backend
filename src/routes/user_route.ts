@@ -103,7 +103,7 @@ router.post(
 );
 
 // Delete user account (requires authentication)
-router.delete("/delete-account", authenticateToken, validate(schemas.deleteUser), deleteUserAccount);
+router.delete("/delete-account", authenticateToken, deleteUserAccount);
 
 // Change user email (secure endpoint)
 router.put("/change-email", authenticateToken, validate(schemas.changeUserEmail), changeUserEmail);

@@ -235,6 +235,27 @@ export const deleteUserAccount = async (req: AuthRequest, res: Response): Promis
     await sequelize.transaction(async (transaction) => {
       const force = { force: true, transaction } as const;
 
+      await User.update(
+        { currentSubscriptionId: null, marketplaceId: null },
+        { where: { id: userId }, transaction }
+      );
+      await User.update(
+        { referredBy: null },
+        { where: { referredBy: userId }, transaction }
+      );
+      await User.update(
+        { teamOwnerId: null, isTeamMember: false },
+        { where: { teamOwnerId: userId }, transaction }
+      );
+
+      await sequelize.query(
+        `DELETE FROM "Waitlists"
+         WHERE "clientUserId" = :userId
+            OR "marketplaceId" IN (SELECT id FROM "Marketplaces" WHERE "userId" = :userId)
+            OR "fulfilledAppointmentId" IN (SELECT id FROM "Appointments" WHERE "userId" = :userId)`,
+        { replacements: { userId }, transaction }
+      );
+
       const videos = await Video.findAll({
         where: { userId },
         attributes: ["id"],
@@ -307,6 +328,10 @@ export const deleteUserAccount = async (req: AuthRequest, res: Response): Promis
           ...force,
         });
       }
+      await ReviewFlag.update(
+        { resolvedById: null },
+        { where: { resolvedById: userId }, transaction }
+      );
       await ReviewFlag.destroy({ where: { flaggedById: userId }, ...force });
       await sequelize.query(
         `DELETE FROM "ProviderReviews"
@@ -314,8 +339,12 @@ export const deleteUserAccount = async (req: AuthRequest, res: Response): Promis
         { replacements: { userId }, transaction }
       );
 
+      await SupportTicket.update(
+        { assignedToId: null },
+        { where: { assignedToId: userId }, transaction }
+      );
       const tickets = await SupportTicket.findAll({
-        where: { userId },
+        where: { [Op.or]: [{ userId }, { createdById: userId }] },
         attributes: ["id"],
         transaction,
       });
@@ -327,7 +356,10 @@ export const deleteUserAccount = async (req: AuthRequest, res: Response): Promis
         });
       }
       await SupportTicketMessage.destroy({ where: { senderId: userId }, ...force });
-      await SupportTicket.destroy({ where: { userId }, ...force });
+      await SupportTicket.destroy({
+        where: { [Op.or]: [{ userId }, { createdById: userId }] },
+        ...force,
+      });
 
       const appointments = await Appointment.findAll({
         where: { userId },
@@ -413,10 +445,10 @@ export const deleteUserAccount = async (req: AuthRequest, res: Response): Promis
           });
         }
 
-        await Waitlist.destroy({
-          where: { marketplaceId: marketplace.id },
-          ...force,
-        });
+        await User.update(
+          { marketplaceId: null },
+          { where: { marketplaceId: marketplace.id }, transaction }
+        );
         await Favorite.destroy({
           where: { marketplaceId: marketplace.id },
           ...force,
@@ -436,10 +468,15 @@ export const deleteUserAccount = async (req: AuthRequest, res: Response): Promis
         }
       }
 
-      await Waitlist.destroy({ where: { clientUserId: userId }, ...force });
       await Favorite.destroy({ where: { userId }, ...force });
       await Friend.destroy({
-        where: { [Op.or]: [{ userId }, { friendId: userId }] },
+        where: {
+          [Op.or]: [
+            { userId },
+            { friendId: userId },
+            { requestedBy: userId },
+          ],
+        },
         ...force,
       });
       await Notification.destroy({ where: { userId }, ...force });
@@ -469,22 +506,9 @@ export const deleteUserAccount = async (req: AuthRequest, res: Response): Promis
       await Announcement.destroy({ where: { createdById: userId }, ...force });
       await Log.destroy({ where: { userId }, ...force });
 
-      await User.update(
-        { referredBy: null },
-        { where: { referredBy: userId }, transaction }
-      );
-      await User.update(
-        { teamOwnerId: null, isTeamMember: false },
-        { where: { teamOwnerId: userId }, transaction }
-      );
-
       const user = await User.findByPk(userId, { transaction, paranoid: false });
       if (user) {
-        await user.update(
-          { marketplaceId: null, currentSubscriptionId: null },
-          { transaction }
-        );
-        await user.destroy(force);
+        await user.destroy({ force: true, transaction });
       }
     });
 
@@ -494,9 +518,10 @@ export const deleteUserAccount = async (req: AuthRequest, res: Response): Promis
     });
   } catch (error) {
     console.error("Error deleting user account:", error);
+    const detail = error instanceof Error ? error.message : String(error);
     return res.status(500).json({
       status: false,
-      message: "Internal server error",
+      message: detail || "Failed to delete account",
     });
   }
 };
