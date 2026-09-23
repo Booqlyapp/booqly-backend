@@ -5,6 +5,34 @@ import { User } from "../models/user_model";
 import { Marketplace } from "../models/marketplace_model";
 import { Social } from "../models/social_model";
 import { Subscription } from "../models/subscription_model";
+import { Appointment } from "../models/appointment_model";
+import { AppointmentServiceStatus } from "../models/appointment_service_status_model";
+import { Conversation } from "../models/conversation_model";
+import { Message } from "../models/message_model";
+import { Notification } from "../models/notification_model";
+import { Review } from "../models/review_model";
+import { ReviewFlag } from "../models/review_flag_model";
+import { Referral } from "../models/referral_model";
+import { ReferralInvite } from "../models/referral_invite_model";
+import { Log } from "../models/log_model";
+import { Promotion } from "../models/promotion_model";
+import { Service } from "../models/service_model";
+import { ServiceAddOn } from "../models/service_addon_model";
+import { Schedule } from "../models/schedule_model";
+import Favorite from "../models/favorite_model";
+import { Friend } from "../models/friend_model";
+import { ExternalAppointment } from "../models/external_appointment_model";
+import { Waitlist } from "../models/waitlist_model";
+import { Video } from "../models/video_model";
+import { VideoLike } from "../models/video_like_model";
+import { VideoComment } from "../models/video_comment_model";
+import { VideoCommentReaction } from "../models/video_comment_reaction_model";
+import { VideoFollow } from "../models/video_follow_model";
+import { TeamMemberPermission } from "../models/team_member_permission_model";
+import { ContentReport } from "../models/content_report_model";
+import { Announcement } from "../models/announcement_model";
+import { SupportTicket } from "../models/support_ticket_model";
+import { SupportTicketMessage } from "../models/support_ticket_message_model";
 import { localFileStorage } from "../utils/local-storage";
 import { DocumentVerificationService, MIN_DOC_WIDTH, MIN_DOC_HEIGHT } from "../services/document-verification.service";
 import bcryptjs from "bcryptjs";
@@ -195,14 +223,274 @@ export const deleteUserAccount = async (req: AuthRequest, res: Response): Promis
       });
     }
 
-    const user = req.user;
+    const userId = req.user.id as string;
+    const sequelize = User.sequelize;
+    if (!sequelize) {
+      return res.status(500).json({
+        status: false,
+        message: "Internal server error",
+      });
+    }
 
-    // Soft delete the user
-    await user.destroy();
+    await sequelize.transaction(async (transaction) => {
+      const force = { force: true, transaction } as const;
+
+      const videos = await Video.findAll({
+        where: { userId },
+        attributes: ["id"],
+        transaction,
+      });
+      const videoIds = videos.map((video) => video.id);
+      if (videoIds.length > 0) {
+        const comments = await VideoComment.findAll({
+          where: { videoId: { [Op.in]: videoIds } },
+          attributes: ["id"],
+          transaction,
+        });
+        const commentIds = comments.map((comment) => comment.id);
+        if (commentIds.length > 0) {
+          await VideoCommentReaction.destroy({
+            where: { commentId: { [Op.in]: commentIds } },
+            ...force,
+          });
+        }
+        await VideoComment.destroy({
+          where: { videoId: { [Op.in]: videoIds } },
+          ...force,
+        });
+        await VideoLike.destroy({
+          where: { videoId: { [Op.in]: videoIds } },
+          ...force,
+        });
+        await Video.destroy({ where: { id: { [Op.in]: videoIds } }, ...force });
+      }
+
+      await VideoCommentReaction.destroy({ where: { userId }, ...force });
+      await VideoComment.destroy({ where: { userId }, ...force });
+      await VideoLike.destroy({ where: { userId }, ...force });
+      await VideoFollow.destroy({
+        where: { [Op.or]: [{ followerId: userId }, { followingId: userId }] },
+        ...force,
+      });
+
+      const conversations = await Conversation.findAll({
+        where: { [Op.or]: [{ clientId: userId }, { providerId: userId }] },
+        attributes: ["id"],
+        transaction,
+      });
+      const conversationIds = conversations.map((conversation) => conversation.id);
+      if (conversationIds.length > 0) {
+        await Message.destroy({
+          where: { conversationId: { [Op.in]: conversationIds } },
+          ...force,
+        });
+        await Conversation.destroy({
+          where: { id: { [Op.in]: conversationIds } },
+          ...force,
+        });
+      }
+      await Message.destroy({ where: { senderId: userId }, ...force });
+
+      const reviews = await Review.findAll({
+        where: { [Op.or]: [{ clientId: userId }, { providerId: userId }] },
+        attributes: ["id"],
+        transaction,
+      });
+      const reviewIds = reviews.map((review) => review.id);
+      if (reviewIds.length > 0) {
+        await ReviewFlag.destroy({
+          where: { reviewId: { [Op.in]: reviewIds } },
+          ...force,
+        });
+        await Review.destroy({
+          where: { id: { [Op.in]: reviewIds } },
+          ...force,
+        });
+      }
+      await ReviewFlag.destroy({ where: { flaggedById: userId }, ...force });
+      await sequelize.query(
+        `DELETE FROM "ProviderReviews"
+         WHERE "clientId" = :userId OR "providerId" = :userId`,
+        { replacements: { userId }, transaction }
+      );
+
+      const tickets = await SupportTicket.findAll({
+        where: { userId },
+        attributes: ["id"],
+        transaction,
+      });
+      const ticketIds = tickets.map((ticket) => ticket.id);
+      if (ticketIds.length > 0) {
+        await SupportTicketMessage.destroy({
+          where: { ticketId: { [Op.in]: ticketIds } },
+          ...force,
+        });
+      }
+      await SupportTicketMessage.destroy({ where: { senderId: userId }, ...force });
+      await SupportTicket.destroy({ where: { userId }, ...force });
+
+      const appointments = await Appointment.findAll({
+        where: { userId },
+        attributes: ["id"],
+        transaction,
+      });
+      const appointmentIds = appointments.map((appointment) => appointment.id);
+      if (appointmentIds.length > 0) {
+        await AppointmentServiceStatus.destroy({
+          where: { appointmentId: { [Op.in]: appointmentIds } },
+          ...force,
+        });
+        await Appointment.destroy({
+          where: { id: { [Op.in]: appointmentIds } },
+          ...force,
+        });
+      }
+
+      const marketplaces = await Marketplace.findAll({
+        where: { userId },
+        transaction,
+      });
+      for (const marketplace of marketplaces) {
+        const marketplaceAppointments = await Appointment.findAll({
+          where: { marketplaceId: marketplace.id },
+          attributes: ["id"],
+          transaction,
+        });
+        const marketplaceAppointmentIds = marketplaceAppointments.map(
+          (appointment) => appointment.id
+        );
+        if (marketplaceAppointmentIds.length > 0) {
+          await AppointmentServiceStatus.destroy({
+            where: { appointmentId: { [Op.in]: marketplaceAppointmentIds } },
+            ...force,
+          });
+          await Appointment.destroy({
+            where: { id: { [Op.in]: marketplaceAppointmentIds } },
+            ...force,
+          });
+        }
+
+        const externalAppointments = await ExternalAppointment.findAll({
+          where: { marketplaceId: marketplace.id },
+          attributes: ["id"],
+          transaction,
+        });
+        const externalIds = externalAppointments.map((item) => item.id);
+        if (externalIds.length > 0) {
+          await sequelize.query(
+            `DELETE FROM "ExternalAppointmentAddOns"
+             WHERE "externalAppointmentServiceId" IN (
+               SELECT id FROM "ExternalAppointmentServices"
+               WHERE "externalAppointmentId" IN (:ids)
+             )`,
+            { replacements: { ids: externalIds }, transaction }
+          );
+          await sequelize.query(
+            `DELETE FROM "ExternalAppointmentServices"
+             WHERE "externalAppointmentId" IN (:ids)`,
+            { replacements: { ids: externalIds }, transaction }
+          );
+          await ExternalAppointment.destroy({
+            where: { id: { [Op.in]: externalIds } },
+            ...force,
+          });
+        }
+
+        const services = await Service.findAll({
+          where: { marketplaceId: marketplace.id },
+          attributes: ["id"],
+          transaction,
+        });
+        const serviceIds = services.map((service) => service.id);
+        if (serviceIds.length > 0) {
+          await ServiceAddOn.destroy({
+            where: { serviceId: { [Op.in]: serviceIds } },
+            ...force,
+          });
+          await Service.destroy({
+            where: { id: { [Op.in]: serviceIds } },
+            ...force,
+          });
+        }
+
+        await Waitlist.destroy({
+          where: { marketplaceId: marketplace.id },
+          ...force,
+        });
+        await Favorite.destroy({
+          where: { marketplaceId: marketplace.id },
+          ...force,
+        });
+        await Promotion.destroy({
+          where: { providerId: userId },
+          ...force,
+        });
+        await Social.destroy({
+          where: { marketplaceId: marketplace.id },
+          ...force,
+        });
+        const scheduleId = marketplace.scheduleId;
+        await marketplace.destroy(force);
+        if (scheduleId) {
+          await Schedule.destroy({ where: { id: scheduleId }, ...force });
+        }
+      }
+
+      await Waitlist.destroy({ where: { clientUserId: userId }, ...force });
+      await Favorite.destroy({ where: { userId }, ...force });
+      await Friend.destroy({
+        where: { [Op.or]: [{ userId }, { friendId: userId }] },
+        ...force,
+      });
+      await Notification.destroy({ where: { userId }, ...force });
+      await Subscription.destroy({ where: { userId }, ...force });
+      await Referral.destroy({
+        where: { [Op.or]: [{ referrerId: userId }, { referredUserId: userId }] },
+        ...force,
+      });
+      await ReferralInvite.destroy({
+        where: { [Op.or]: [{ providerId: userId }, { clientId: userId }] },
+        ...force,
+      });
+      await ContentReport.destroy({
+        where: {
+          [Op.or]: [
+            { reporterId: userId },
+            { reportedUserId: userId },
+            { originalUserId: userId },
+          ],
+        },
+        ...force,
+      });
+      await TeamMemberPermission.destroy({
+        where: { [Op.or]: [{ teamMemberId: userId }, { ownerId: userId }] },
+        ...force,
+      });
+      await Announcement.destroy({ where: { createdById: userId }, ...force });
+      await Log.destroy({ where: { userId }, ...force });
+
+      await User.update(
+        { referredBy: null },
+        { where: { referredBy: userId }, transaction }
+      );
+      await User.update(
+        { teamOwnerId: null, isTeamMember: false },
+        { where: { teamOwnerId: userId }, transaction }
+      );
+
+      const user = await User.findByPk(userId, { transaction, paranoid: false });
+      if (user) {
+        await user.update(
+          { marketplaceId: null, currentSubscriptionId: null },
+          { transaction }
+        );
+        await user.destroy(force);
+      }
+    });
 
     return res.status(200).json({
       status: true,
-      message: "User account deleted successfully",
+      message: "User account deleted permanently",
     });
   } catch (error) {
     console.error("Error deleting user account:", error);

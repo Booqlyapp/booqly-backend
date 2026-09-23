@@ -201,7 +201,7 @@ const addSubscriptionStatusToMarketplaces = async (marketplaces: EnhancedMarketp
           const activeSubscription = await Subscription.findOne({
             where: {
               id: mp.user.currentSubscriptionId,
-              status: 'active'
+              status: { [Op.in]: ['active', 'trialing'] }
             }
           });
           
@@ -2230,7 +2230,7 @@ export const getMarketplaceById = async (req: any, res: Response) => {
       const activeSubscription = await Subscription.findOne({
         where: {
           id: responseData.user.currentSubscriptionId,
-          status: 'active'
+          status: { [Op.in]: ['active', 'trialing'] }
         }
       });
       responseData.user.hasActiveSubscription = !!activeSubscription;

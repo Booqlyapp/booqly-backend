@@ -24,7 +24,7 @@ export class SubscriptionService {
         include: [{
           model: Subscription,
           as: 'subscriptions',
-          where: { status: 'active' },
+          where: { status: { [Op.in]: ['active', 'trialing'] } },
           required: false,
         }],
       });
@@ -64,7 +64,7 @@ export class SubscriptionService {
         include: [{
           model: Subscription,
           as: 'subscriptions',
-          where: { status: 'active' },
+          where: { status: { [Op.in]: ['active', 'trialing'] } },
           required: false,
         }],
       });
@@ -160,6 +160,7 @@ export class SubscriptionService {
     purchaseId: string;
     verificationData: string;
     transactionDate?: string;
+    startedWithTrial?: boolean;
   }) {
     return IapService.verifyAndActivatePurchase(input);
   }
@@ -300,7 +301,7 @@ export class SubscriptionService {
         include: [{
           model: Subscription,
           as: 'subscriptions',
-          where: { status: 'active' },
+          where: { status: { [Op.in]: ['active', 'trialing'] } },
           required: false,
         }],
       });
@@ -446,7 +447,7 @@ export class SubscriptionService {
         include: [{
           model: Subscription,
           as: 'subscriptions',
-          where: { status: 'active' },
+          where: { status: { [Op.in]: ['active', 'trialing'] } },
           required: false,
         }],
       });
@@ -501,7 +502,7 @@ export class SubscriptionService {
         include: [{
           model: Subscription,
           as: 'subscriptions',
-          where: { status: 'active' },
+          where: { status: { [Op.in]: ['active', 'trialing'] } },
           required: false,
         }],
       });
@@ -545,7 +546,7 @@ export class SubscriptionService {
         include: [{
           model: Subscription,
           as: 'subscriptions',
-          where: { status: 'active' },
+          where: { status: { [Op.in]: ['active', 'trialing'] } },
           required: false,
         }],
       });
@@ -583,7 +584,7 @@ export class SubscriptionService {
         include: [{
           model: Subscription,
           as: 'subscriptions',
-          where: { status: 'active' },
+          where: { status: { [Op.in]: ['active', 'trialing'] } },
           required: false,
         }],
       });

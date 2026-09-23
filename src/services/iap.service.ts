@@ -12,6 +12,7 @@ export interface VerifyIapInput {
   purchaseId: string;
   verificationData: string;
   transactionDate?: string;
+  startedWithTrial?: boolean;
 }
 
 /**
@@ -49,9 +50,11 @@ export class IapService {
     }
 
     let storeExpiresAt: Date | undefined;
+    let isStoreTrial = false;
     if (input.platform === 'ios') {
       const apple = await this.verifyAppleReceipt(input.verificationData, input.productId);
       storeExpiresAt = apple.expiresAt;
+      isStoreTrial = apple.isTrial === true;
     } else if (input.platform === 'android') {
       await this.verifyGooglePurchase(input);
     } else {
@@ -97,6 +100,12 @@ export class IapService {
           ? existingEnd
           : this.computePeriodEnd(periodStart, mapped.billingInterval);
 
+    const inIntroTrial =
+      mapped.billingInterval === 'month' &&
+      (isStoreTrial || input.startedWithTrial === true);
+    const trialEnd = inIntroTrial ? periodEnd : null;
+    const status = inIntroTrial ? 'trialing' : 'active';
+
     const metadata = {
       store: input.platform,
       storeProductId: input.productId,
@@ -106,15 +115,17 @@ export class IapService {
       transactionDate: input.transactionDate ?? null,
       billingAnchorPreserved: keepAnchor,
       previousPlanType: subscription?.planType ?? null,
+      introductoryTrial: inIntroTrial,
     };
 
     if (subscription) {
       await subscription.update({
         planType: mapped.planType as any,
-        status: 'active',
+        status,
         stripeSubscriptionId: null,
         currentPeriodStart: periodStart,
         currentPeriodEnd: periodEnd,
+        trialEnd,
         cancelAtPeriodEnd: false,
         metadata: {
           ...previousMeta,
@@ -126,10 +137,10 @@ export class IapService {
         userId: input.userId,
         planType: mapped.planType as any,
         stripeSubscriptionId: null,
-        status: 'active',
+        status,
         currentPeriodStart: periodStart,
         currentPeriodEnd: periodEnd,
-        trialEnd: null,
+        trialEnd,
         cancelAtPeriodEnd: false,
         metadata,
       });
@@ -144,6 +155,7 @@ export class IapService {
       status: subscription.status,
       currentPeriodStart: subscription.currentPeriodStart,
       currentPeriodEnd: subscription.currentPeriodEnd,
+      trialEnd: subscription.trialEnd,
       store: input.platform,
       productId: input.productId,
     };
@@ -167,7 +179,7 @@ export class IapService {
   private static async verifyAppleReceipt(
     receiptData: string,
     productId: string
-  ): Promise<{ expiresAt?: Date }> {
+  ): Promise<{ expiresAt?: Date; isTrial?: boolean }> {
     if (process.env.APPLE_IAP_SKIP_VERIFY === 'true') {
       console.warn('⚠️  Skipping Apple receipt verification (APPLE_IAP_SKIP_VERIFY=true)');
       return {};
@@ -233,7 +245,10 @@ export class IapService {
       }
     }
 
-    return { expiresAt };
+    const isTrial =
+      match?.is_trial_period === 'true' || match?.is_in_intro_offer_period === 'true';
+
+    return { expiresAt, isTrial };
   }
 
   private static async postAppleVerify(url: string, body: object): Promise<any> {

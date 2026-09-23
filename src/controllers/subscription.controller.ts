@@ -113,7 +113,7 @@ export const verifyIapPurchase = async (req: AuthRequest, res: Response): Promis
       return;
     }
 
-    const { platform, productId, purchaseId, verificationData, transactionDate } = req.body;
+    const { platform, productId, purchaseId, verificationData, transactionDate, startedWithTrial } = req.body;
 
     if (!platform || !['ios', 'android'].includes(platform)) {
       res.status(400).json({
@@ -138,6 +138,7 @@ export const verifyIapPurchase = async (req: AuthRequest, res: Response): Promis
       purchaseId,
       verificationData,
       transactionDate,
+      startedWithTrial: startedWithTrial === true,
     });
 
     res.status(200).json({

@@ -51,7 +51,7 @@ export const schemas = {
       .messages({
         'string.empty': 'Password is required',
         'string.min': 'Password must be at least 8 characters long',
-        'string.pattern.base': 'Password must contain at least one lowercase letter, one uppercase letter, and one number'
+        'string.pattern.base': 'Password must contain at least One lowercase letter, One uppercase letter, and One number'
       }),
     phone: Joi.string().trim().pattern(/^\+?[\d\s\-\(\)]+$/).optional()
       .messages({
@@ -102,7 +102,7 @@ export const schemas = {
       .messages({
         'string.empty': 'New password is required',
         'string.min': 'Password must be at least 8 characters long',
-        'string.pattern.base': 'Password must contain at least one lowercase letter, one uppercase letter, and one number'
+        'string.pattern.base': 'Password must contain at least One lowercase letter, One uppercase letter, and one number'
       }),
   }).options({ stripUnknown: true }),
 
@@ -141,7 +141,7 @@ export const schemas = {
     email: Joi.string().trim().email({ tlds: { allow: false } }).required(),
     password: Joi.string().min(8).pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)')).required()
       .messages({
-        'string.pattern.base': 'Password must contain at least one lowercase letter, one uppercase letter, and one number'
+        'string.pattern.base': 'Password must contain at least One lowercase letter, One uppercase letter, and one number'
       }),
     phone: Joi.string().trim().pattern(/^\+?[\d\s\-\(\)]+$/).optional().allow(null, ''),
     jobTitle: Joi.string().trim().max(100).optional().allow(null, ''),
@@ -167,7 +167,7 @@ export const schemas = {
     employmentEndDate: Joi.date().optional().allow(null),
     password: Joi.string().min(8).pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)')).optional()
       .messages({
-        'string.pattern.base': 'Password must contain at least one lowercase letter, one uppercase letter, and one number'
+        'string.pattern.base': 'Password must contain at least One lowercase letter, One uppercase letter, and one number'
       }),
   }).min(1).custom((value, helpers) => {
     if (value.employmentStartDate && value.employmentEndDate) {
@@ -196,7 +196,7 @@ export const schemas = {
   changeUserPassword: Joi.object({
     newPassword: Joi.string().min(8).pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)')).required()
       .messages({
-        'string.pattern.base': 'New password must contain at least one lowercase letter, one uppercase letter, and one number'
+        'string.pattern.base': 'New password must contain at least One lowercase letter, One uppercase letter, and one number'
       }),
   }),
 
@@ -446,7 +446,7 @@ export const schemas = {
     password: Joi.string().min(8).pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)')).optional()
       .messages({
         'string.min': 'Password must be at least 8 characters long',
-        'string.pattern.base': 'Password must contain at least one lowercase letter, one uppercase letter, and one number'
+        'string.pattern.base': 'Password must contain at least One lowercase letter, One uppercase letter, and one number'
       }),
   }).min(1),
 
