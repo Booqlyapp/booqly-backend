@@ -19,6 +19,10 @@ export class ReferralService {
         throw new Error('Provider not found');
       }
 
+      if (provider.role !== 'solo') {
+        throw new Error('Booqly Pass referral codes are available to Pro and Premium Solo Professionals');
+      }
+
       // Check if provider has access to referral features
       const hasAccess = await SubscriptionService.hasFeatureAccess(providerId, 'custom_referral_codes');
       if (!hasAccess) {
@@ -71,25 +75,15 @@ export class ReferralService {
         throw new Error('Only clients can use referral codes');
       }
 
-      // Find provider with this referral code
-      const referrer = await User.findOne({
-        where: { referralCode },
-        attributes: ['id', 'name', 'email', 'role'],
-      });
-
-      if (!referrer) {
+      const resolved = await this.resolveEligibleReferrer(referralCode);
+      if (!resolved.success || !resolved.referrer) {
         return {
           success: false,
-          message: 'Invalid referral code',
+          message: resolved.message,
         };
       }
 
-      if (referrer.role !== 'solo' && referrer.role !== 'suite') {
-        return {
-          success: false,
-          message: 'Invalid referral code',
-        };
-      }
+      const referrer = resolved.referrer;
 
       // Check if referral already exists
       const existingReferral = await Referral.findOne({
@@ -296,6 +290,48 @@ export class ReferralService {
   }
 
   /**
+   * Public lookup: code must belong to a Solo Pro/Premium professional.
+   */
+  static async resolveEligibleReferrer(referralCode: string): Promise<{
+    success: boolean;
+    message: string;
+    referrer?: User;
+  }> {
+    const referrer = await User.findOne({
+      where: { referralCode },
+      attributes: ['id', 'name', 'email', 'role', 'businessName'],
+    });
+
+    if (!referrer) {
+      return { success: false, message: 'Invalid referral code' };
+    }
+
+    if (referrer.role !== 'solo') {
+      return {
+        success: false,
+        message: 'Referral codes can only be used from a Solo Beauty Professional',
+      };
+    }
+
+    const hasAccess = await SubscriptionService.hasFeatureAccess(
+      referrer.id,
+      'custom_referral_codes'
+    );
+    if (!hasAccess) {
+      return {
+        success: false,
+        message: 'This referral code is only valid for Pro or Premium Solo Professionals',
+      };
+    }
+
+    return {
+      success: true,
+      message: 'Valid referral code',
+      referrer,
+    };
+  }
+
+  /**
    * Validate referral code format
    */
   static validateReferralCode(code: string): boolean {
@@ -370,15 +406,24 @@ export class ReferralService {
     try {
       // Get provider details
       const provider = await User.findByPk(providerId, {
-        attributes: ['id', 'name', 'businessName', 'referralCode'],
+        attributes: ['id', 'name', 'businessName', 'referralCode', 'role'],
       });
 
       if (!provider) {
         throw new Error('Provider not found');
       }
 
+      if (provider.role !== 'solo') {
+        throw new Error('Booqly Pass referral codes are available to Pro and Premium Solo Professionals');
+      }
+
       if (!provider.referralCode) {
         throw new Error('Provider does not have a referral code. Generate one first.');
+      }
+
+      const hasAccess = await SubscriptionService.hasFeatureAccess(providerId, 'custom_referral_codes');
+      if (!hasAccess) {
+        throw new Error('Referral feature requires Pro or Premium subscription');
       }
 
       // Get client details

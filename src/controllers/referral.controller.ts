@@ -46,6 +46,49 @@ export const generateReferralCode = async (req: AuthRequest, res: Response): Pro
 };
 
 /**
+ * Public validate — used on client signup before an account exists.
+ */
+export const validateReferralCodePublic = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const rawCode = typeof req.params.code === 'string' ? req.params.code : '';
+    const referralCode = rawCode.trim().toUpperCase();
+
+    if (!referralCode) {
+      res.status(400).json({
+        status: false,
+        message: 'Referral code is required',
+      });
+      return;
+    }
+
+    if (!ReferralService.validateReferralCode(referralCode)) {
+      res.status(400).json({
+        status: false,
+        message: 'Invalid referral code format. Code must be 6-12 uppercase letters and numbers.',
+      });
+      return;
+    }
+
+    const result = await ReferralService.resolveEligibleReferrer(referralCode);
+    res.status(result.success ? 200 : 400).json({
+      status: result.success,
+      message: result.message,
+      data: result.referrer
+        ? {
+            name: result.referrer.businessName || result.referrer.name,
+          }
+        : null,
+    });
+  } catch (error) {
+    console.error('Error validating referral code:', error);
+    res.status(500).json({
+      status: false,
+      message: 'Failed to validate referral code',
+    });
+  }
+};
+
+/**
  * Apply referral code (clients only)
  */
 export const applyReferralCode = async (req: AuthRequest, res: Response): Promise<void> => {

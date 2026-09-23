@@ -327,6 +327,25 @@ export class SubscriptionService {
         return { canBook: true };
       }
 
+      const referredProviders = await ReferralService.getClientReferredProviders(userId);
+      const hasReferrals = Array.isArray(referredProviders) && referredProviders.length > 0;
+
+      // Referral access is limited to referred providers only — not a free
+      // booking with anyone, and not broader discovery.
+      if (hasReferrals) {
+        if (providerId) {
+          const isReferred = await ReferralService.isClientReferredToProvider(userId, providerId);
+          if (isReferred) {
+            return { canBook: true };
+          }
+          return {
+            canBook: false,
+            reason: 'Referral access is limited to your referred providers. Subscribe to premium ($4.99/month) to book others.',
+          };
+        }
+        return { canBook: true };
+      }
+
       // Free trial clients
       if (!user.freeBookingUsed) {
         return { canBook: true }; // Can use their one free booking
@@ -388,8 +407,18 @@ export class SubscriptionService {
       const isReferred = await ReferralService.isClientReferredToProvider(clientId, providerId);
       
       if (isReferred) {
-        // Client can message referred providers for free (unlimited)
+        // Client can message referred providers for free (3-message rule still applies in chat)
         return { canMessage: true };
+      }
+
+      const referredProviders = await ReferralService.getClientReferredProviders(clientId);
+      const hasReferrals = Array.isArray(referredProviders) && referredProviders.length > 0;
+      if (hasReferrals) {
+        return {
+          canMessage: false,
+          requiresSubscription: true,
+          reason: 'Referral access is limited to your referred providers. Subscribe to premium ($4.99/month) to message others.',
+        };
       }
 
       // Free trial clients can message up to 3 different providers
@@ -519,6 +548,16 @@ export class SubscriptionService {
       const activeSubscription = client.subscriptions?.[0];
       if (activeSubscription) {
         return { canDiscover: true };
+      }
+
+      const { ReferralService } = require('./referral.service');
+      const referredProviders = await ReferralService.getClientReferredProviders(clientId);
+      const hasReferrals = Array.isArray(referredProviders) && referredProviders.length > 0;
+      if (hasReferrals) {
+        return {
+          canDiscover: false,
+          reason: 'Referral access is limited to your referred providers. Subscribe to premium ($4.99/month) for full discovery.',
+        };
       }
 
       // Free trial clients can discover until they use their free booking

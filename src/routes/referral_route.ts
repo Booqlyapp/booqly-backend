@@ -12,11 +12,15 @@ import {
   sendReferralCodeToClient,
   getClientReferralInvites,
   applyReferralInvite,
+  validateReferralCodePublic,
 } from '../controllers/referral.controller';
 import { authenticateToken, requireRole } from '../middlewares/auth.middleware';
 import { validateUUID } from '../middlewares/validation.middleware';
 
 const router = Router();
+
+// Public check used on client signup before login
+router.get('/validate/:code', validateReferralCodePublic);
 
 // Generate referral code (providers only)
 router.post('/generate', authenticateToken, requireRole(['solo', 'suite']), generateReferralCode);
