@@ -93,7 +93,7 @@ export class IapService {
       !!existingStart;
 
     const periodStart = keepAnchor && existingStart ? existingStart : now;
-    const periodEnd =
+    let periodEnd =
       storeExpiresAt && storeExpiresAt.getTime() > now.getTime()
         ? storeExpiresAt
         : keepAnchor && existingEnd
@@ -103,6 +103,16 @@ export class IapService {
     const inIntroTrial =
       mapped.billingInterval === 'month' &&
       (isStoreTrial || input.startedWithTrial === true);
+    if (
+      inIntroTrial &&
+      !storeExpiresAt &&
+      mapped.planType === 'client_premium' &&
+      mapped.billingInterval === 'month'
+    ) {
+      const threeDays = new Date(periodStart);
+      threeDays.setDate(threeDays.getDate() + 3);
+      periodEnd = threeDays;
+    }
     const trialEnd = inIntroTrial ? periodEnd : null;
     const status = inIntroTrial ? 'trialing' : 'active';
 
