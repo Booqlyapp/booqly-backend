@@ -79,6 +79,7 @@ export class SubscriptionService {
         return {
           ...this.getDefaultSubscriptionInfo(user),
           isCoveredBySuiteOwner,
+          hasUsedIntroductoryTrial: await this.hasUsedIntroductoryTrial(billedUserId),
         };
       }
 
@@ -143,6 +144,7 @@ export class SubscriptionService {
         store: typeof meta.store === 'string' ? meta.store : null,
         isCoveredBySuiteOwner,
         features,
+        hasUsedIntroductoryTrial: await this.hasUsedIntroductoryTrial(billedUserId),
       };
     } catch (error) {
       console.error('Error getting subscription info:', error);
@@ -791,6 +793,24 @@ export class SubscriptionService {
       ...base,
       cancelRequestedAt: new Date().toISOString(),
     };
+  }
+
+  /**
+   * True if this user already started / used an introductory free trial
+   * (e.g. client 3-day free), so the free-trial plan card should not show again.
+   */
+  private static async hasUsedIntroductoryTrial(userId: string): Promise<boolean> {
+    const rows = await Subscription.findAll({
+      where: { userId },
+      attributes: ['trialEnd', 'status', 'metadata'],
+    });
+
+    return rows.some((row) => {
+      if (row.trialEnd != null) return true;
+      if (row.status === 'trialing') return true;
+      const meta = (row.metadata || {}) as Record<string, unknown>;
+      return meta.introductoryTrial === true;
+    });
   }
 
   /**
