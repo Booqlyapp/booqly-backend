@@ -100,9 +100,27 @@ export class IapService {
           ? existingEnd
           : this.computePeriodEnd(periodStart, mapped.billingInterval);
 
+    // Honor client-started trial only once (first Premium monthly purchase).
+    let honorStartedWithTrial = input.startedWithTrial === true;
+    if (honorStartedWithTrial) {
+      const priorSubs = await Subscription.findAll({
+        where: { userId: input.userId },
+        attributes: ['trialEnd', 'status', 'metadata'],
+      });
+      const alreadyUsedIntro = priorSubs.some((row) => {
+        if (row.trialEnd != null) return true;
+        if (row.status === 'trialing') return true;
+        const meta = (row.metadata || {}) as Record<string, unknown>;
+        return meta.introductoryTrial === true;
+      });
+      if (alreadyUsedIntro) {
+        honorStartedWithTrial = false;
+      }
+    }
+
     const inIntroTrial =
       mapped.billingInterval === 'month' &&
-      (isStoreTrial || input.startedWithTrial === true);
+      (isStoreTrial || honorStartedWithTrial);
     if (
       inIntroTrial &&
       !storeExpiresAt &&
