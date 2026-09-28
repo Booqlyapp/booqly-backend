@@ -100,7 +100,7 @@ export class IapService {
           ? existingEnd
           : this.computePeriodEnd(periodStart, mapped.billingInterval);
 
-    // Honor client-started trial only once (first Premium monthly purchase).
+    // Honor startedWithTrial only once (first monthly intro purchase).
     let honorStartedWithTrial = input.startedWithTrial === true;
     if (honorStartedWithTrial) {
       const priorSubs = await Subscription.findAll({
@@ -121,6 +121,8 @@ export class IapService {
     const inIntroTrial =
       mapped.billingInterval === 'month' &&
       (isStoreTrial || honorStartedWithTrial);
+    // Client Premium intro is 3 days; solo monthly intro uses the 1-month period
+    // from computePeriodEnd / store expiry above.
     if (
       inIntroTrial &&
       !storeExpiresAt &&
@@ -130,6 +132,15 @@ export class IapService {
       const threeDays = new Date(periodStart);
       threeDays.setDate(threeDays.getDate() + 3);
       periodEnd = threeDays;
+    } else if (
+      inIntroTrial &&
+      !storeExpiresAt &&
+      mapped.planType.startsWith('solo_') &&
+      mapped.billingInterval === 'month'
+    ) {
+      const oneMonth = new Date(periodStart);
+      oneMonth.setMonth(oneMonth.getMonth() + 1);
+      periodEnd = oneMonth;
     }
     const trialEnd = inIntroTrial ? periodEnd : null;
     const status = inIntroTrial ? 'trialing' : 'active';
