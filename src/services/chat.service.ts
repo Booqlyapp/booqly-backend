@@ -188,17 +188,54 @@ export class ChatService {
 
       await conversation.update(updateData);
 
-      // Send notification to recipient
+      // Push to the other participant (WhatsApp-style: sender name + preview).
       const recipientId = isClient ? conversation.providerId : conversation.clientId;
+      const senderUser = isClient
+        ? (conversation as any).client
+        : (conversation as any).provider;
+      const senderName =
+        (senderUser?.name && String(senderUser.name).trim()) || 'Someone';
+
+      let preview = '';
+      if (messageType === 'text') {
+        preview = (content || '').trim();
+      } else if (messageType === 'image') {
+        preview = '📷 Photo';
+      } else if (messageType === 'video') {
+        preview = '🎥 Video';
+      } else if (messageType === 'voice') {
+        preview = '🎤 Voice message';
+      } else if (messageType === 'reel') {
+        preview = '🎬 Reel';
+      } else {
+        preview = 'New message';
+      }
+      if (preview.length > 120) {
+        preview = `${preview.slice(0, 117)}...`;
+      }
+      if (!preview) {
+        preview = 'New message';
+      }
+
       await NotificationService.createNotification({
         userId: recipientId,
         type: 'message',
-        title: 'New Message',
-        content: `You have a new message from ${isClient ? (conversation as any).client.name : (conversation as any).provider.name}`,
+        title: senderName,
+        content: preview,
         data: {
+          type: 'message',
           conversationId,
           messageId: message.id,
           senderId,
+          senderName,
+          clientId: conversation.clientId,
+          providerId: conversation.providerId,
+        },
+        channels: {
+          push: true,
+          sms: false,
+          email: false,
+          in_app: true,
         },
       });
 

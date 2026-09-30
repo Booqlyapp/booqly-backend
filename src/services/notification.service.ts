@@ -201,7 +201,24 @@ export class NotificationService {
           title: notification.title,
           body: notification.content,
         },
-        data: this.toFirebaseData(notification.data),
+        data: {
+          ...this.toFirebaseData(notification.data),
+          type: notification.type,
+          title: notification.title,
+          body: notification.content,
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            channelId:
+              notification.type === 'message'
+                ? 'booqly_chat_messages'
+                : 'booqly_general_notifications',
+            sound: 'default',
+            defaultSound: true,
+            defaultVibrateTimings: true,
+          },
+        },
       });
 
       console.log(`Push notification sent to user ${user.id}`);
