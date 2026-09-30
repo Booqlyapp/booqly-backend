@@ -33,10 +33,10 @@ export const IAP_PLAN_PRICES: Record<string, { monthly: number; yearly: number }
   solo_basic: { monthly: 14.99, yearly: 143.90 },
   solo_pro: { monthly: 29.99, yearly: 287.90 },
   solo_premium: { monthly: 49.99, yearly: 479.90 },
-  suite_starter: { monthly: 49.99, yearly: 479.9 },
-  suite_growing: { monthly: 74.99, yearly: 719.9 },
-  suite_pro: { monthly: 99.99, yearly: 959.9 },
-  suite_elite: { monthly: 149.99, yearly: 1439.9 },
+  suite_starter: { monthly: 49.99, yearly: 479.90 },
+  suite_growing: { monthly: 74.99, yearly: 719.90 },
+  suite_pro: { monthly: 99.99, yearly: 959.90 },
+  suite_elite: { monthly: 149.99, yearly: 1439.90 },
 };
 
 export function resolveBillingInterval(metadata: unknown): 'month' | 'year' {

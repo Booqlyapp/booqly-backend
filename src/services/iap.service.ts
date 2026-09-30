@@ -135,7 +135,8 @@ export class IapService {
     } else if (
       inIntroTrial &&
       !storeExpiresAt &&
-      mapped.planType.startsWith('solo_') &&
+      (mapped.planType.startsWith('solo_') ||
+        mapped.planType.startsWith('suite_')) &&
       mapped.billingInterval === 'month'
     ) {
       const oneMonth = new Date(periodStart);
