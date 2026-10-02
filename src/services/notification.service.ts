@@ -4,24 +4,53 @@ import admin from 'firebase-admin';
 import nodemailer from 'nodemailer';
 // import twilio from 'twilio'; // Uncomment when Twilio is configured
 
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
-
 interface NotificationData {
-  userId: string;
-  type: 'booking_confirmation' | 'booking_reminder' | 'message' | 'review' | 'payment' | 'subscription' | 'review_response' | 'identity_verified' | 'identity_rejected' | 'professional_verified' | 'professional_rejected' | 'business_verified' | 'business_rejected';
-  title: string;
-  content: string;
-  data?: any;
-  channels?: {
-    push?: boolean;
-    sms?: boolean;
-    email?: boolean;
-    in_app?: boolean;
-  };
+    userId: string;
+    type: 'booking_confirmation' | 'booking_reminder' | 'message' | 'review' | 'payment' | 'subscription' | 'review_response' | 'identity_verified' | 'identity_rejected' | 'professional_verified' | 'professional_rejected' | 'business_verified' | 'business_rejected';
+    title: string;
+    content: string;
+    data?: any;
+    channels?: {
+        push?: boolean;
+        sms?: boolean;
+        email?: boolean;
+        in_app?: boolean;
+    };
 }
 
 export class NotificationService {
   private static firebaseInitialized = false;
+  private static firebaseInitAttempted = false;
+
+  /** Parse service account lazily so dotenv/env vars are available. */
+  private static loadServiceAccount(): admin.ServiceAccount | null {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+    if (!raw || !raw.trim() || raw.trim() === '{}') {
+      console.error('FIREBASE_SERVICE_ACCOUNT is missing or empty');
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      if (typeof parsed.private_key === 'string') {
+        // Hosting panels often store PEM newlines as literal "\n".
+        parsed.private_key = parsed.private_key.replace(/\\n/g, '\n');
+      }
+      if (!parsed.project_id || !parsed.client_email || !parsed.private_key) {
+        console.error('FIREBASE_SERVICE_ACCOUNT is missing required fields');
+        return null;
+      }
+      return parsed as admin.ServiceAccount;
+    } catch (error) {
+      console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT:', error);
+      return null;
+    }
+  }
+
+  /** Call once at server boot to fail loudly if FCM creds are broken. */
+  static warmupFirebase(): void {
+    this.ensureFirebaseInitialized();
+  }
 
   private static ensureFirebaseInitialized(): void {
     if (this.firebaseInitialized || admin.apps.length > 0) {
@@ -29,12 +58,24 @@ export class NotificationService {
       return;
     }
 
+    if (this.firebaseInitAttempted) {
+      return;
+    }
+    this.firebaseInitAttempted = true;
+
     try {
+      const serviceAccount = this.loadServiceAccount();
+      if (!serviceAccount) {
+        return;
+      }
+
       admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount as admin.ServiceAccount),
+        credential: admin.credential.cert(serviceAccount),
       });
       this.firebaseInitialized = true;
-      console.log('Firebase Admin initialized for push notifications');
+      console.log(
+        `Firebase Admin initialized for push notifications (project: ${serviceAccount.projectId || (serviceAccount as any).project_id})`
+      );
     } catch (error) {
       console.error('Failed to initialize Firebase Admin:', error);
     }
@@ -192,8 +233,16 @@ export class NotificationService {
 
       this.ensureFirebaseInitialized();
       if (!this.firebaseInitialized) {
+        console.error(
+          `Push notification skipped for user ${user.id}: Firebase Admin not initialized`
+        );
         return;
       }
+
+      const channelId =
+        notification.type === 'message'
+          ? 'booqly_chat_messages'
+          : 'booqly_general_notifications';
 
       await admin.messaging().send({
         token: user.fcmToken,
@@ -210,28 +259,39 @@ export class NotificationService {
         android: {
           priority: 'high',
           notification: {
-            channelId:
-              notification.type === 'message'
-                ? 'booqly_chat_messages'
-                : 'booqly_general_notifications',
+            channelId,
             sound: 'default',
             defaultSound: true,
             defaultVibrateTimings: true,
+            priority: 'high',
+          },
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+              contentAvailable: true,
+            },
           },
         },
       });
 
       console.log(`Push notification sent to user ${user.id}`);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error sending push notification:', error);
 
       // Invalidate bad tokens so future sends don't keep failing.
+      const code = error?.errorInfo?.code || error?.code || '';
+      const message = error instanceof Error ? error.message : String(error);
       if (
-        error instanceof Error &&
-        (error.message.includes('registration-token-not-registered') ||
-          error.message.includes('invalid-registration-token'))
+        code === 'messaging/registration-token-not-registered' ||
+        code === 'messaging/invalid-registration-token' ||
+        message.includes('registration-token-not-registered') ||
+        message.includes('invalid-registration-token')
       ) {
         await user.update({ fcmToken: null });
+        console.log(`Cleared invalid FCM token for user ${user.id}`);
       }
     }
   }

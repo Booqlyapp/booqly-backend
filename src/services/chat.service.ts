@@ -128,6 +128,7 @@ export class ChatService {
     reason?: string;
     messageLimitReached?: boolean;
     requiresSubscription?: boolean;
+    recipientId?: string;
   }> {
     try {
       const conversation = await Conversation.findByPk(conversationId, {
@@ -217,27 +218,32 @@ export class ChatService {
         preview = 'New message';
       }
 
-      await NotificationService.createNotification({
-        userId: recipientId,
-        type: 'message',
-        title: senderName,
-        content: preview,
-        data: {
+      // Never let push/in-app notification failures block message delivery.
+      try {
+        await NotificationService.createNotification({
+          userId: recipientId,
           type: 'message',
-          conversationId,
-          messageId: message.id,
-          senderId,
-          senderName,
-          clientId: conversation.clientId,
-          providerId: conversation.providerId,
-        },
-        channels: {
-          push: true,
-          sms: false,
-          email: false,
-          in_app: true,
-        },
-      });
+          title: senderName,
+          content: preview,
+          data: {
+            type: 'message',
+            conversationId,
+            messageId: message.id,
+            senderId,
+            senderName,
+            clientId: conversation.clientId,
+            providerId: conversation.providerId,
+          },
+          channels: {
+            push: true,
+            sms: false,
+            email: false,
+            in_app: true,
+          },
+        });
+      } catch (notifyError) {
+        console.error('Chat push/in-app notification failed:', notifyError);
+      }
 
       // Fetch message with sender info
       const messageWithSender = await Message.findByPk(message.id, {
@@ -246,7 +252,11 @@ export class ChatService {
         ],
       });
 
-      return { message: messageWithSender!, canSend: true };
+      return {
+        message: messageWithSender!,
+        canSend: true,
+        recipientId,
+      };
     } catch (error) {
       console.error('Error sending message:', error);
       throw new Error('Failed to send message');

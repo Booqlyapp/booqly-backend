@@ -95,11 +95,21 @@ export class SocketService {
           );
 
           if (result.canSend) {
-            // Emit message to conversation room
-            this.io.to(`conversation:${data.conversationId}`).emit('new_message', {
-              message: result.message,
+            const payload =
+              typeof result.message?.toJSON === 'function'
+                ? result.message.toJSON()
+                : result.message;
+            const socketPayload = {
+              data: payload,
               conversationId: data.conversationId,
-            });
+            };
+
+            // Conversation room + recipient personal room (for badge updates)
+            this.broadcastChatMessage(
+              data.conversationId,
+              result.recipientId,
+              socketPayload
+            );
 
             // Send acknowledgment to sender
             socket.emit('message_sent', {
@@ -171,10 +181,32 @@ export class SocketService {
   }
 
   /**
-   * Send message to conversation
+   * Send message to conversation room (only users who opened that chat).
    */
   public sendMessageToConversation(conversationId: string, message: any) {
     this.io.to(`conversation:${conversationId}`).emit('new_message', message);
+  }
+
+  /**
+   * Deliver new_message to a user's personal room so unread badges update
+   * even when they are not currently inside the conversation.
+   */
+  public sendMessageToUser(userId: string, message: any) {
+    this.io.to(`user:${userId}`).emit('new_message', message);
+  }
+
+  /**
+   * Broadcast a chat message to the conversation room and the recipient.
+   */
+  public broadcastChatMessage(
+    conversationId: string,
+    recipientId: string | null | undefined,
+    message: any
+  ) {
+    this.sendMessageToConversation(conversationId, message);
+    if (recipientId) {
+      this.sendMessageToUser(recipientId, message);
+    }
   }
 
   /**

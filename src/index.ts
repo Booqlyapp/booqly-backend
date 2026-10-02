@@ -11,6 +11,7 @@ import { ensureVideosShortCodeColumn, backfillVideoShortCodes } from "./utils/en
 import { initModels } from "./models/index";
 import routes from "./routes/index";
 import { SocketService } from "./services/socket.service";
+import { NotificationService } from "./services/notification.service";
 import { WaitlistService } from "./services/waitlist.service";
 import {
   generalRateLimit,
@@ -100,6 +101,9 @@ const socketService = new SocketService(server);
 
 // Make socket service globally accessible
 (global as any).socketService = socketService;
+
+// Fail loudly at boot if Firebase Admin / FCM credentials are broken.
+NotificationService.warmupFirebase();
 
 // Error handling middleware (must be last)
 app.use(notFoundHandler);

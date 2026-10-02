@@ -216,15 +216,22 @@ export const sendMessage = async (req: AuthRequest, res: Response): Promise<void
 
     // Emit Socket.IO event for real-time messaging
     // Emit a plain JSON payload so receivers can parse attachments/videoUrl.
+    // Also emit to the recipient's personal user room so unread badges update
+    // while they are on Home / other screens (not inside the conversation).
     if ((global as any).socketService) {
       const payload =
         typeof result.message?.toJSON === "function"
           ? result.message.toJSON()
           : result.message;
-      (global as any).socketService.sendMessageToConversation(conversationId, {
+      const socketPayload = {
         data: payload,
         conversationId: conversationId,
-      });
+      };
+      (global as any).socketService.broadcastChatMessage(
+        conversationId,
+        result.recipientId,
+        socketPayload
+      );
     }
 
     res.status(201).json({
