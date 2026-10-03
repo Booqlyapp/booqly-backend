@@ -260,6 +260,8 @@ export class NotificationService {
           priority: 'high',
           notification: {
             channelId,
+            // Must match the app's Android launcher mipmap resource name.
+            icon: 'launcher_icon',
             sound: 'default',
             defaultSound: true,
             defaultVibrateTimings: true,

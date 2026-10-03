@@ -398,6 +398,10 @@ export const updateTeamMemberPermissions = async (req: any, res: Response): Prom
 
     const permissionFields: (keyof typeof req.body)[] = [
       "viewBookings",
+      "viewTotalBookings",
+      "viewLimitedBookings",
+      "viewTotalEarnings",
+      "viewLimitedEarnings",
       "manageTeamMembers",
       "useChat",
       "viewReviewCenter",
@@ -414,8 +418,20 @@ export const updateTeamMemberPermissions = async (req: any, res: Response): Prom
     const updateData: any = {};
     for (const field of permissionFields) {
       if (req.body[field] !== undefined) {
-        updateData[field] = req.body[field];
+        updateData[field] = Boolean(req.body[field]);
       }
+    }
+
+    // Total vs Limited are mutually exclusive per domain.
+    if (updateData.viewTotalBookings === true) {
+      updateData.viewLimitedBookings = false;
+    } else if (updateData.viewLimitedBookings === true) {
+      updateData.viewTotalBookings = false;
+    }
+    if (updateData.viewTotalEarnings === true) {
+      updateData.viewLimitedEarnings = false;
+    } else if (updateData.viewLimitedEarnings === true) {
+      updateData.viewTotalEarnings = false;
     }
 
     const [permissions, created] = await TeamMemberPermission.findOrCreate({
@@ -433,6 +449,16 @@ export const updateTeamMemberPermissions = async (req: any, res: Response): Prom
     if (!created) {
       await permissions.update(updateData);
     }
+
+    // Keep legacy viewBookings in sync for older clients.
+    const bookingsAccess =
+      Boolean(permissions.viewTotalBookings) ||
+      Boolean(permissions.viewLimitedBookings);
+    if (permissions.viewBookings !== bookingsAccess) {
+      await permissions.update({ viewBookings: bookingsAccess });
+    }
+
+    await permissions.reload();
 
     return res.status(200).json({
       status: true,
@@ -480,6 +506,10 @@ export const getMyPermissions = async (req: any, res: Response): Promise<Respons
           teamMemberId: user.id,
           ownerId: user.teamOwnerId,
           viewBookings: false,
+          viewTotalBookings: false,
+          viewLimitedBookings: false,
+          viewTotalEarnings: false,
+          viewLimitedEarnings: false,
           manageTeamMembers: false,
           useChat: false,
           viewReviewCenter: false,

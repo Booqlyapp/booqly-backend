@@ -21,6 +21,7 @@ interface ServiceData {
 interface ExternalAppointmentAttributes {
   id: string;
   marketplaceId: string;
+  assignedTeamMemberId?: string | null;
   servicesData: ServiceData[];
   firstName: string;
   lastName: string;
@@ -52,6 +53,7 @@ export class ExternalAppointment
 {
   declare id: CreationOptional<string>;
   declare marketplaceId: string;
+  declare assignedTeamMemberId: string | null;
   declare servicesData: ServiceData[];
   declare firstName: string;
   declare lastName: string;
@@ -91,6 +93,16 @@ export default function initExternalAppointment(sequelize: Sequelize) {
           model: "Marketplaces",
           key: "id",
         },
+      },
+      assignedTeamMemberId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+          model: "Users",
+          key: "id",
+        },
+        onUpdate: "CASCADE",
+        onDelete: "SET NULL",
       },
       servicesData: {
         type: DataTypes.JSONB,

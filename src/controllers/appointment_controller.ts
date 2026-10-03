@@ -9,6 +9,10 @@ import { Social } from "../models/social_model";
 import { SubscriptionService } from "../services/subscription.service";
 import { WaitlistService } from "../services/waitlist.service";
 import { StripeService } from "../services/stripe.service";
+import {
+  getBookingScope,
+  getTeamMemberPermissionsForUser,
+} from "../utils/team_member_permission_helper";
 
 interface CreateAppointmentData {
   marketplaceId: string;
@@ -492,12 +496,30 @@ export const getAppointments = async (
     const offset = (pageNum - 1) * limitNum;
     const sortDirection = String(sort).toLowerCase() === "desc" ? "DESC" : "ASC";
 
+    const whereClause: any = {
+      marketplaceId,
+      ...dateFilter,
+    };
+
+    // Team members: total = suite-wide, limited = only their assigned bookings.
+    const requester = req.user as User | undefined;
+    if (requester?.isTeamMember) {
+      const permissions = await getTeamMemberPermissionsForUser(requester);
+      const scope = getBookingScope(permissions);
+      if (scope === "none") {
+        return res.status(403).json({
+          status: false,
+          message: "You do not have permission to view bookings.",
+        });
+      }
+      if (scope === "limited") {
+        whereClause.assignedTeamMemberId = requester.id;
+      }
+    }
+
     // Fetch appointments with includes
     const { count, rows: appointments } = await Appointment.findAndCountAll({
-      where: {
-        marketplaceId,
-        ...dateFilter,
-      },
+      where: whereClause,
       include: [
         { model: User, as: "user" }, // Full user object
         { 

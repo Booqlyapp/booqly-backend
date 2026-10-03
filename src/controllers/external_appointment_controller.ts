@@ -12,6 +12,10 @@ import { StripeService } from "../services/stripe.service";
 import { WaitlistService } from "../services/waitlist.service";
 import Stripe from 'stripe';
 import sequelize from "../config/database";
+import {
+  getBookingScope,
+  getTeamMemberPermissionsForUser,
+} from "../utils/team_member_permission_helper";
 
 interface GetExternalAppointmentsQuery {
   marketplaceId: string;
@@ -973,12 +977,29 @@ export const getExternalAppointments = async (
     const offset = (pageNum - 1) * limitNum;
     const sortDirection = String(sort).toLowerCase() === "desc" ? "DESC" : "ASC";
 
+    const whereClause: any = {
+      marketplaceId,
+      ...dateFilter,
+    };
+
+    const requester = (req as any).user as User | undefined;
+    if (requester?.isTeamMember) {
+      const permissions = await getTeamMemberPermissionsForUser(requester);
+      const scope = getBookingScope(permissions);
+      if (scope === "none") {
+        return res.status(403).json({
+          status: false,
+          message: "You do not have permission to view bookings.",
+        });
+      }
+      if (scope === "limited") {
+        whereClause.assignedTeamMemberId = requester.id;
+      }
+    }
+
     // Fetch external appointments
     const { count, rows: externalAppointments } = await ExternalAppointment.findAndCountAll({
-      where: {
-        marketplaceId,
-        ...dateFilter,
-      },
+      where: whereClause,
       limit: limitNum,
       offset,
       order: [["dateTime", sortDirection]],

@@ -11,7 +11,12 @@ interface TeamMemberPermissionAttributes {
   id: string;
   teamMemberId: string;
   ownerId: string;
+  /** @deprecated Prefer viewTotalBookings / viewLimitedBookings */
   viewBookings: boolean;
+  viewTotalBookings: boolean;
+  viewLimitedBookings: boolean;
+  viewTotalEarnings: boolean;
+  viewLimitedEarnings: boolean;
   manageTeamMembers: boolean;
   useChat: boolean;
   viewReviewCenter: boolean;
@@ -35,6 +40,10 @@ export class TeamMemberPermission
   declare teamMemberId: string;
   declare ownerId: string;
   declare viewBookings: CreationOptional<boolean>;
+  declare viewTotalBookings: CreationOptional<boolean>;
+  declare viewLimitedBookings: CreationOptional<boolean>;
+  declare viewTotalEarnings: CreationOptional<boolean>;
+  declare viewLimitedEarnings: CreationOptional<boolean>;
   declare manageTeamMembers: CreationOptional<boolean>;
   declare useChat: CreationOptional<boolean>;
   declare viewReviewCenter: CreationOptional<boolean>;
@@ -81,6 +90,26 @@ export default function initTeamMemberPermission(sequelize: Sequelize) {
         onDelete: "CASCADE",
       },
       viewBookings: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      viewTotalBookings: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      viewLimitedBookings: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      viewTotalEarnings: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      viewLimitedEarnings: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,

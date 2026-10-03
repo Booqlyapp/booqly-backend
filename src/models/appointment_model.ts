@@ -13,6 +13,7 @@ interface AppointmentAttributes {
   userId: string;
   marketplaceId: string;
   serviceId: string;
+  assignedTeamMemberId?: string | null;
   paymentStatus: string | null;
   paymentMethod?: "apple_pay" | "stripe_card" | "paypal" | "cash" | "other" | null;
   status: "pending" | "canceled" | "postponed" | "availed" | "no_show";
@@ -36,6 +37,7 @@ export class Appointment
   declare userId: string;
   declare marketplaceId: string;
   declare serviceId: string;
+  declare assignedTeamMemberId: string | null;
   declare paymentStatus: "pending" | "paid" | "failed" | "refunded" | "partially_paid";
   declare paymentMethod?: "apple_pay" | "stripe_card" | "paypal" | "cash" | "other" | null;
   declare status: "pending" | "canceled" | "postponed" | "availed" | "no_show";
@@ -73,6 +75,16 @@ export default function initAppointment(sequelize: Sequelize) {
           model: "Marketplaces",
           key: "id",
         },
+      },
+      assignedTeamMemberId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+          model: "Users",
+          key: "id",
+        },
+        onUpdate: "CASCADE",
+        onDelete: "SET NULL",
       },
       serviceId: {
         type: DataTypes.UUID,

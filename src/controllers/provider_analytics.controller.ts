@@ -4,10 +4,34 @@ import { Marketplace } from '../models/marketplace_model';
 import { Appointment } from '../models/appointment_model';
 import { Service } from '../models/service_model';
 import { Op, Sequelize } from 'sequelize';
+import {
+  getEarningsScope,
+  getTeamMemberPermissionsForUser,
+} from '../utils/team_member_permission_helper';
 
 interface AuthRequest extends Request {
   user?: any;
   userId?: string;
+}
+
+async function resolveMarketplaceAccess(req: AuthRequest, marketplaceId: string) {
+  let marketplace = await Marketplace.findOne({
+    where: {
+      id: marketplaceId,
+      userId: req.userId,
+    },
+  });
+
+  if (!marketplace && req.user?.isTeamMember && req.user?.teamOwnerId) {
+    marketplace = await Marketplace.findOne({
+      where: {
+        id: marketplaceId,
+        userId: req.user.teamOwnerId,
+      },
+    });
+  }
+
+  return marketplace;
 }
 
 /**
@@ -188,13 +212,7 @@ export const getEarningsSummary = async (req: AuthRequest, res: Response): Promi
 
     const { marketplaceId } = req.params;
 
-    // Verify marketplace belongs to user
-    const marketplace = await Marketplace.findOne({
-      where: {
-        id: marketplaceId,
-        userId: req.userId,
-      },
-    });
+    const marketplace = await resolveMarketplaceAccess(req, marketplaceId);
 
     if (!marketplace) {
       res.status(404).json({
@@ -204,8 +222,27 @@ export const getEarningsSummary = async (req: AuthRequest, res: Response): Promi
       return;
     }
 
-    // Check analytics access
-    const access = await ProviderAnalyticsService.checkAnalyticsAccess(req.userId);
+    let assignedTeamMemberId: string | undefined;
+    if (req.user?.isTeamMember) {
+      const permissions = await getTeamMemberPermissionsForUser(req.user);
+      const scope = getEarningsScope(permissions);
+      if (scope === 'none') {
+        res.status(403).json({
+          status: false,
+          message: 'You do not have permission to view earnings.',
+        });
+        return;
+      }
+      if (scope === 'limited') {
+        assignedTeamMemberId = req.userId;
+      }
+    }
+
+    // Check analytics access (suite owner subscription covers team members)
+    const accessUserId = req.user?.isTeamMember
+      ? req.user.teamOwnerId
+      : req.userId;
+    const access = await ProviderAnalyticsService.checkAnalyticsAccess(accessUserId);
 
     if (!access.hasBasic && !access.hasAdvanced) {
       res.status(403).json({
@@ -229,19 +266,35 @@ export const getEarningsSummary = async (req: AuthRequest, res: Response): Promi
     // This month
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
+    const analyticsOptions = assignedTeamMemberId
+      ? { assignedTeamMemberId }
+      : undefined;
+
     const [todayAnalytics, weekAnalytics, monthAnalytics] = await Promise.all([
-      ProviderAnalyticsService.getBasicAnalytics(marketplaceId, {
-        startDate: startOfToday,
-        endDate: endOfToday,
-      }),
-      ProviderAnalyticsService.getBasicAnalytics(marketplaceId, {
-        startDate: startOfWeek,
-        endDate: now,
-      }),
-      ProviderAnalyticsService.getBasicAnalytics(marketplaceId, {
-        startDate: startOfMonth,
-        endDate: now,
-      }),
+      ProviderAnalyticsService.getBasicAnalytics(
+        marketplaceId,
+        {
+          startDate: startOfToday,
+          endDate: endOfToday,
+        },
+        analyticsOptions
+      ),
+      ProviderAnalyticsService.getBasicAnalytics(
+        marketplaceId,
+        {
+          startDate: startOfWeek,
+          endDate: now,
+        },
+        analyticsOptions
+      ),
+      ProviderAnalyticsService.getBasicAnalytics(
+        marketplaceId,
+        {
+          startDate: startOfMonth,
+          endDate: now,
+        },
+        analyticsOptions
+      ),
     ]);
 
     res.status(200).json({

@@ -96,7 +96,8 @@ export class ProviderAnalyticsService {
    */
   static async getBasicAnalytics(
     marketplaceId: string,
-    dateRange: DateRange
+    dateRange: DateRange,
+    options?: { assignedTeamMemberId?: string }
   ): Promise<BasicAnalytics> {
     const { startDate, endDate } = dateRange;
 
@@ -107,6 +108,9 @@ export class ProviderAnalyticsService {
         createdAt: {
           [Op.between]: [startDate, endDate],
         },
+        ...(options?.assignedTeamMemberId
+          ? { assignedTeamMemberId: options.assignedTeamMemberId }
+          : {}),
       },
       include: [
         {

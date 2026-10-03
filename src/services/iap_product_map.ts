@@ -29,7 +29,7 @@ export function resolveIapProduct(productId: string) {
 
 /** Catalog prices used for admin MRR after Stripe subscription billing was removed. */
 export const IAP_PLAN_PRICES: Record<string, { monthly: number; yearly: number }> = {
-  client_premium: { monthly: 4.99, yearly: 59.88 },
+  client_premium: { monthly: 4.99, yearly: 47.90 },
   solo_basic: { monthly: 14.99, yearly: 143.90 },
   solo_pro: { monthly: 29.99, yearly: 287.90 },
   solo_premium: { monthly: 49.99, yearly: 479.90 },
