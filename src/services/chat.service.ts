@@ -67,43 +67,49 @@ export class ChatService {
         options?.isFriendChat ??
         (await this.areUsersFriends(clientId, providerId));
 
-      // Check if conversation already exists
+      // Friend chats can be opened from either side; normalize IDs so one pair
+      // always maps to one conversation and look up both orientations.
+      let resolvedClientId = clientId;
+      let resolvedProviderId = providerId;
+      if (isFriendChat) {
+        const sorted = [clientId, providerId].sort();
+        resolvedClientId = sorted[0];
+        resolvedProviderId = sorted[1];
+      }
+
+      const includeUsers = [
+        { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
+        { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
+      ];
+
+      // Check if conversation already exists in either orientation (prevents duals).
       let conversation = await Conversation.findOne({
         where: {
-          clientId,
-          providerId,
+          [Op.or]: [
+            { clientId: resolvedClientId, providerId: resolvedProviderId },
+            { clientId: resolvedProviderId, providerId: resolvedClientId },
+            { clientId, providerId },
+            { clientId: providerId, providerId: clientId },
+          ],
         },
-        include: [
-          { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
-          { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
-        ],
+        include: includeUsers,
       });
 
       if (!conversation) {
-        // Create new conversation
         conversation = await Conversation.create({
-          clientId,
-          providerId,
+          clientId: resolvedClientId,
+          providerId: resolvedProviderId,
           status: isFriendChat ? 'active' : 'pending',
           clientMessageCount: 0,
           providerHasResponded: isFriendChat,
         });
 
-        // Fetch with includes
         conversation = await Conversation.findByPk(conversation.id, {
-          include: [
-            { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
-            { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
-          ],
+          include: includeUsers,
         });
       } else if (isFriendChat) {
         await this.resetFriendConversationLimits(conversation);
-        await conversation.reload({
-          include: [
-            { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
-            { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
-          ],
-        });
+        await conversation.reload({ include: includeUsers });
       }
 
       return conversation!;
@@ -285,7 +291,9 @@ export class ChatService {
       });
 
       if (!conversation) {
-        throw new Error('Conversation not found or access denied');
+        const accessError: any = new Error('Conversation not found or access denied');
+        accessError.statusCode = 403;
+        throw accessError;
       }
 
       const offset = (page - 1) * limit;
@@ -298,6 +306,7 @@ export class ChatService {
         order: [['createdAt', 'ASC']],
         limit,
         offset,
+        distinct: true,
       });
 
       return {
@@ -322,7 +331,9 @@ export class ChatService {
     try {
       const offset = (page - 1) * limit;
 
-      const { count, rows: conversations } = await Conversation.findAndCountAll({
+      // Fetch a wider window then de-dupe swapped client/provider pairs so
+      // the same two users never appear as two chat threads.
+      const rows = await Conversation.findAll({
         where: {
           [Op.or]: [
             { clientId: userId },
@@ -335,25 +346,65 @@ export class ChatService {
           {
             model: Message,
             as: 'messages',
-            limit: 1,
+            limit: 20,
+            separate: true,
             order: [['createdAt', 'DESC']],
             include: [
               { model: User, as: 'sender', attributes: ['id', 'name'] },
             ],
           },
         ],
-        order: [['lastMessageAt', 'DESC']],
-        limit,
-        offset,
+        order: [
+          ['lastMessageAt', 'DESC'],
+          ['updatedAt', 'DESC'],
+        ],
       });
+
+      const pairKey = (c: Conversation) =>
+        [c.clientId, c.providerId].sort().join(':');
+
+      const dedupedMap = new Map<string, Conversation>();
+      for (const conversation of rows) {
+        const key = pairKey(conversation);
+        const existing = dedupedMap.get(key);
+        if (!existing) {
+          dedupedMap.set(key, conversation);
+          continue;
+        }
+        const existingTime = existing.lastMessageAt?.getTime() ?? 0;
+        const nextTime = conversation.lastMessageAt?.getTime() ?? 0;
+        if (nextTime >= existingTime) {
+          dedupedMap.set(key, conversation);
+        }
+      }
+
+      const deduped = Array.from(dedupedMap.values()).sort((a, b) => {
+        const aTime = a.lastMessageAt?.getTime() ?? 0;
+        const bTime = b.lastMessageAt?.getTime() ?? 0;
+        return bTime - aTime;
+      });
+
+      // Keep latest message for preview + recent unread for accurate badges.
+      for (const conversation of deduped) {
+        const msgs = (conversation as any).messages as Message[] | undefined;
+        if (!msgs || msgs.length === 0) continue;
+        const latest = msgs[0];
+        const unreadOthers = msgs.filter(
+          (m) => !m.isRead && m.senderId !== userId && m.id !== latest.id
+        );
+        (conversation as any).messages = [latest, ...unreadOthers];
+      }
+
+      const total = deduped.length;
+      const conversations = deduped.slice(offset, offset + limit);
 
       return {
         conversations,
         pagination: {
-          total: count,
+          total,
           page,
           limit,
-          totalPages: Math.ceil(count / limit),
+          totalPages: Math.ceil(total / limit) || 1,
         },
       };
     } catch (error) {
@@ -446,26 +497,25 @@ export class ChatService {
    */
   static async getUnreadMessageCount(userId: string): Promise<number> {
     try {
-      const count = await Message.count({
-        include: [
-          {
-            model: Conversation,
-            as: 'conversation',
-            where: {
-              [Op.or]: [
-                { clientId: userId },
-                { providerId: userId },
-              ],
-            },
-          },
-        ],
+      // Avoid fragile Message.count({ include }) which can return 0 / throw
+      // depending on dialect — resolve conversation IDs first, then count.
+      const conversations = await Conversation.findAll({
         where: {
+          [Op.or]: [{ clientId: userId }, { providerId: userId }],
+        },
+        attributes: ['id'],
+      });
+
+      const conversationIds = conversations.map((c) => c.id);
+      if (conversationIds.length === 0) return 0;
+
+      return Message.count({
+        where: {
+          conversationId: { [Op.in]: conversationIds },
           senderId: { [Op.ne]: userId },
           isRead: false,
         },
       });
-
-      return count;
     } catch (error) {
       console.error('Error getting unread count:', error);
       return 0;
