@@ -137,7 +137,19 @@ export class ChatService {
     recipientId?: string;
   }> {
     try {
-      const conversation = await Conversation.findByPk(conversationId, {
+      const accessible = await this.resolveAccessibleConversation(
+        conversationId,
+        senderId
+      );
+      if (!accessible) {
+        return {
+          message: null as any,
+          canSend: false,
+          reason: 'Conversation not found or access denied',
+        };
+      }
+
+      const conversation = await Conversation.findByPk(accessible.id, {
         include: [
           { model: User, as: 'client' },
           { model: User, as: 'provider' },
@@ -148,8 +160,17 @@ export class ChatService {
         return { message: null as any, canSend: false, reason: 'Conversation not found' };
       }
 
-      const isClient = conversation.clientId === senderId;
-      const isProvider = conversation.providerId === senderId;
+      // Team members act on the suite owner's side of the thread.
+      const senderAccount = await User.findByPk(senderId, {
+        attributes: ['id', 'isTeamMember', 'teamOwnerId'],
+      });
+      const actingAsId =
+        senderAccount?.isTeamMember && senderAccount.teamOwnerId
+          ? senderAccount.teamOwnerId
+          : senderId;
+
+      const isClient = conversation.clientId === actingAsId;
+      const isProvider = conversation.providerId === actingAsId;
 
       if (!isClient && !isProvider) {
         return { message: null as any, canSend: false, reason: 'Not authorized for this conversation' };
@@ -169,9 +190,9 @@ export class ChatService {
         }
       }
 
-      // Create the message
+      // Create the message (sender stays the real user, including team members)
       const message = await Message.create({
-        conversationId,
+        conversationId: conversation.id,
         senderId,
         content,
         messageType,
@@ -233,7 +254,7 @@ export class ChatService {
           content: preview,
           data: {
             type: 'message',
-            conversationId,
+            conversationId: conversation.id,
             messageId: message.id,
             senderId,
             senderName,
@@ -270,6 +291,41 @@ export class ChatService {
   }
 
   /**
+   * Resolve a conversation the user can actually access.
+   * Direct participant, or suite team member on the owner's thread.
+   */
+  static async resolveAccessibleConversation(
+    conversationId: string,
+    userId: string
+  ): Promise<Conversation | null> {
+    const conversation = await Conversation.findByPk(conversationId);
+    if (!conversation) return null;
+
+    if (
+      conversation.clientId === userId ||
+      conversation.providerId === userId
+    ) {
+      return conversation;
+    }
+
+    // Suite team member can access the suite owner's conversations.
+    const user = await User.findByPk(userId, {
+      attributes: ['id', 'isTeamMember', 'teamOwnerId'],
+    });
+    if (user?.isTeamMember && user.teamOwnerId) {
+      const ownerId = user.teamOwnerId;
+      if (
+        conversation.clientId === ownerId ||
+        conversation.providerId === ownerId
+      ) {
+        return conversation;
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Get conversation messages with pagination
    */
   static async getConversationMessages(
@@ -279,27 +335,24 @@ export class ChatService {
     limit: number = 50
   ) {
     try {
-      // Verify user has access to this conversation
-      const conversation = await Conversation.findOne({
-        where: {
-          id: conversationId,
-          [Op.or]: [
-            { clientId: userId },
-            { providerId: userId },
-          ],
-        },
-      });
+      const conversation = await this.resolveAccessibleConversation(
+        conversationId,
+        userId
+      );
 
       if (!conversation) {
-        const accessError: any = new Error('Conversation not found or access denied');
+        const accessError: any = new Error(
+          'Conversation not found or access denied'
+        );
         accessError.statusCode = 403;
         throw accessError;
       }
 
+      const accessibleId = conversation.id;
       const offset = (page - 1) * limit;
 
       const { count, rows: messages } = await Message.findAndCountAll({
-        where: { conversationId },
+        where: { conversationId: accessibleId },
         include: [
           { model: User, as: 'sender', attributes: [...CHAT_USER_ATTRIBUTES] },
         ],
@@ -310,7 +363,8 @@ export class ChatService {
       });
 
       return {
-        messages, // Already in correct order (oldest first)
+        messages,
+        conversationId: accessibleId,
         pagination: {
           total: count,
           page,
@@ -331,13 +385,21 @@ export class ChatService {
     try {
       const offset = (page - 1) * limit;
 
+      const user = await User.findByPk(userId, {
+        attributes: ['id', 'isTeamMember', 'teamOwnerId'],
+      });
+      const participantIds = [userId];
+      if (user?.isTeamMember && user.teamOwnerId) {
+        participantIds.push(user.teamOwnerId);
+      }
+
       // Fetch a wider window then de-dupe swapped client/provider pairs so
       // the same two users never appear as two chat threads.
       const rows = await Conversation.findAll({
         where: {
           [Op.or]: [
-            { clientId: userId },
-            { providerId: userId },
+            { clientId: { [Op.in]: participantIds } },
+            { providerId: { [Op.in]: participantIds } },
           ],
         },
         include: [
@@ -371,6 +433,20 @@ export class ChatService {
           dedupedMap.set(key, conversation);
           continue;
         }
+
+        // Prefer the thread where the requesting user is a direct participant.
+        const existingIsMine =
+          existing.clientId === userId || existing.providerId === userId;
+        const nextIsMine =
+          conversation.clientId === userId || conversation.providerId === userId;
+        if (nextIsMine && !existingIsMine) {
+          dedupedMap.set(key, conversation);
+          continue;
+        }
+        if (existingIsMine && !nextIsMine) {
+          continue;
+        }
+
         const existingTime = existing.lastMessageAt?.getTime() ?? 0;
         const nextTime = conversation.lastMessageAt?.getTime() ?? 0;
         if (nextTime >= existingTime) {
@@ -418,11 +494,19 @@ export class ChatService {
    */
   static async markMessagesAsRead(conversationId: string, userId: string): Promise<void> {
     try {
+      const conversation = await this.resolveAccessibleConversation(
+        conversationId,
+        userId
+      );
+      if (!conversation) {
+        return;
+      }
+
       await Message.update(
         { isRead: true },
         {
           where: {
-            conversationId,
+            conversationId: conversation.id,
             senderId: { [Op.ne]: userId }, // Mark messages from others as read
             isRead: false,
           },
@@ -499,9 +583,20 @@ export class ChatService {
     try {
       // Avoid fragile Message.count({ include }) which can return 0 / throw
       // depending on dialect — resolve conversation IDs first, then count.
+      const user = await User.findByPk(userId, {
+        attributes: ['id', 'isTeamMember', 'teamOwnerId'],
+      });
+      const participantIds = [userId];
+      if (user?.isTeamMember && user.teamOwnerId) {
+        participantIds.push(user.teamOwnerId);
+      }
+
       const conversations = await Conversation.findAll({
         where: {
-          [Op.or]: [{ clientId: userId }, { providerId: userId }],
+          [Op.or]: [
+            { clientId: { [Op.in]: participantIds } },
+            { providerId: { [Op.in]: participantIds } },
+          ],
         },
         attributes: ['id'],
       });
