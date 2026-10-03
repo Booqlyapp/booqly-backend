@@ -37,8 +37,8 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 5000,
       max_memory_restart: "500M",
-      wait_ready: true,
-      listen_timeout: 10000,
+      // Do not use wait_ready — verification-worker never process.send('ready'),
+      // which caused PM2 to SIGINT-restart it every listen_timeout.
     },
   ],
 };

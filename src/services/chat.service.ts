@@ -454,7 +454,12 @@ export class ChatService {
         }
       }
 
-      const deduped = Array.from(dedupedMap.values()).sort((a, b) => {
+      const byId = new Map<string, Conversation>();
+      for (const conversation of dedupedMap.values()) {
+        byId.set(conversation.id, conversation);
+      }
+
+      const deduped = Array.from(byId.values()).sort((a, b) => {
         const aTime = a.lastMessageAt?.getTime() ?? 0;
         const bTime = b.lastMessageAt?.getTime() ?? 0;
         return bTime - aTime;

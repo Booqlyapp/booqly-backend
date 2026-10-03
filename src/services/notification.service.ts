@@ -281,20 +281,25 @@ export class NotificationService {
 
       console.log(`Push notification sent to user ${user.id}`);
     } catch (error: any) {
-      console.error('Error sending push notification:', error);
-
-      // Invalidate bad tokens so future sends don't keep failing.
+      // Invalidate bad/stale tokens so future sends don't keep failing.
+      // NotRegistered is expected after uninstall, logout, or token rotate —
+      // log quietly without dumping the full Firebase stack.
       const code = error?.errorInfo?.code || error?.code || '';
       const message = error instanceof Error ? error.message : String(error);
       if (
         code === 'messaging/registration-token-not-registered' ||
         code === 'messaging/invalid-registration-token' ||
         message.includes('registration-token-not-registered') ||
-        message.includes('invalid-registration-token')
+        message.includes('invalid-registration-token') ||
+        message.includes('NotRegistered')
       ) {
         await user.update({ fcmToken: null });
-        console.log(`Cleared invalid FCM token for user ${user.id}`);
+        console.warn(
+          `Push skipped for user ${user.id}: FCM token not registered (cleared)`
+        );
+        return;
       }
+      console.error('Error sending push notification:', error);
     }
   }
 

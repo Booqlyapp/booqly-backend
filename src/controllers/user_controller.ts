@@ -204,6 +204,19 @@ export const updateUserFcmToken = async (req: AuthRequest, res: Response): Promi
     const rawToken = req.body.fcmToken as string | null;
     const normalizedToken = rawToken && rawToken.trim().length > 0 ? rawToken.trim() : null;
 
+    // One device token must belong to one account — clear it from others first.
+    if (normalizedToken) {
+      await User.update(
+        { fcmToken: null },
+        {
+          where: {
+            fcmToken: normalizedToken,
+            id: { [Op.ne]: req.user.id },
+          },
+        }
+      );
+    }
+
     await req.user.update({ fcmToken: normalizedToken });
 
     return res.status(200).json({
