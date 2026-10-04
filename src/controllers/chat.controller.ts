@@ -281,15 +281,11 @@ export const getConversationMessages = async (req: AuthRequest, res: Response): 
       message: 'Messages retrieved successfully',
       data: result,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error getting messages:', error);
-    const statusCode = error?.statusCode === 403 ? 403 : 500;
-    res.status(statusCode).json({
+    res.status(500).json({
       status: false,
-      message:
-        statusCode === 403
-          ? (error?.message || 'Conversation not found or access denied')
-          : 'Internal server error',
+      message: 'Internal server error',
       ...(process.env.SEND_ERRORS === 'true' && {
         error: error instanceof Error ? error.message : 'Unknown error'
       })

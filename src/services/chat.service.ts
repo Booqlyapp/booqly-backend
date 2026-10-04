@@ -67,49 +67,43 @@ export class ChatService {
         options?.isFriendChat ??
         (await this.areUsersFriends(clientId, providerId));
 
-      // Friend chats can be opened from either side; normalize IDs so one pair
-      // always maps to one conversation and look up both orientations.
-      let resolvedClientId = clientId;
-      let resolvedProviderId = providerId;
-      if (isFriendChat) {
-        const sorted = [clientId, providerId].sort();
-        resolvedClientId = sorted[0];
-        resolvedProviderId = sorted[1];
-      }
-
-      const includeUsers = [
-        { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
-        { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
-      ];
-
-      // Check if conversation already exists in either orientation (prevents duals).
+      // Check if conversation already exists
       let conversation = await Conversation.findOne({
         where: {
-          [Op.or]: [
-            { clientId: resolvedClientId, providerId: resolvedProviderId },
-            { clientId: resolvedProviderId, providerId: resolvedClientId },
-            { clientId, providerId },
-            { clientId: providerId, providerId: clientId },
-          ],
+          clientId,
+          providerId,
         },
-        include: includeUsers,
+        include: [
+          { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
+          { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
+        ],
       });
 
       if (!conversation) {
+        // Create new conversation
         conversation = await Conversation.create({
-          clientId: resolvedClientId,
-          providerId: resolvedProviderId,
+          clientId,
+          providerId,
           status: isFriendChat ? 'active' : 'pending',
           clientMessageCount: 0,
           providerHasResponded: isFriendChat,
         });
 
+        // Fetch with includes
         conversation = await Conversation.findByPk(conversation.id, {
-          include: includeUsers,
+          include: [
+            { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
+            { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
+          ],
         });
       } else if (isFriendChat) {
         await this.resetFriendConversationLimits(conversation);
-        await conversation.reload({ include: includeUsers });
+        await conversation.reload({
+          include: [
+            { model: User, as: 'client', attributes: [...CHAT_USER_ATTRIBUTES] },
+            { model: User, as: 'provider', attributes: [...CHAT_USER_ATTRIBUTES] },
+          ],
+        });
       }
 
       return conversation!;
@@ -137,19 +131,7 @@ export class ChatService {
     recipientId?: string;
   }> {
     try {
-      const accessible = await this.resolveAccessibleConversation(
-        conversationId,
-        senderId
-      );
-      if (!accessible) {
-        return {
-          message: null as any,
-          canSend: false,
-          reason: 'Conversation not found or access denied',
-        };
-      }
-
-      const conversation = await Conversation.findByPk(accessible.id, {
+      const conversation = await Conversation.findByPk(conversationId, {
         include: [
           { model: User, as: 'client' },
           { model: User, as: 'provider' },
@@ -160,17 +142,8 @@ export class ChatService {
         return { message: null as any, canSend: false, reason: 'Conversation not found' };
       }
 
-      // Team members act on the suite owner's side of the thread.
-      const senderAccount = await User.findByPk(senderId, {
-        attributes: ['id', 'isTeamMember', 'teamOwnerId'],
-      });
-      const actingAsId =
-        senderAccount?.isTeamMember && senderAccount.teamOwnerId
-          ? senderAccount.teamOwnerId
-          : senderId;
-
-      const isClient = conversation.clientId === actingAsId;
-      const isProvider = conversation.providerId === actingAsId;
+      const isClient = conversation.clientId === senderId;
+      const isProvider = conversation.providerId === senderId;
 
       if (!isClient && !isProvider) {
         return { message: null as any, canSend: false, reason: 'Not authorized for this conversation' };
@@ -190,9 +163,9 @@ export class ChatService {
         }
       }
 
-      // Create the message (sender stays the real user, including team members)
+      // Create the message
       const message = await Message.create({
-        conversationId: conversation.id,
+        conversationId,
         senderId,
         content,
         messageType,
@@ -254,7 +227,7 @@ export class ChatService {
           content: preview,
           data: {
             type: 'message',
-            conversationId: conversation.id,
+            conversationId,
             messageId: message.id,
             senderId,
             senderName,
@@ -291,41 +264,6 @@ export class ChatService {
   }
 
   /**
-   * Resolve a conversation the user can actually access.
-   * Direct participant, or suite team member on the owner's thread.
-   */
-  static async resolveAccessibleConversation(
-    conversationId: string,
-    userId: string
-  ): Promise<Conversation | null> {
-    const conversation = await Conversation.findByPk(conversationId);
-    if (!conversation) return null;
-
-    if (
-      conversation.clientId === userId ||
-      conversation.providerId === userId
-    ) {
-      return conversation;
-    }
-
-    // Suite team member can access the suite owner's conversations.
-    const user = await User.findByPk(userId, {
-      attributes: ['id', 'isTeamMember', 'teamOwnerId'],
-    });
-    if (user?.isTeamMember && user.teamOwnerId) {
-      const ownerId = user.teamOwnerId;
-      if (
-        conversation.clientId === ownerId ||
-        conversation.providerId === ownerId
-      ) {
-        return conversation;
-      }
-    }
-
-    return null;
-  }
-
-  /**
    * Get conversation messages with pagination
    */
   static async getConversationMessages(
@@ -335,36 +273,35 @@ export class ChatService {
     limit: number = 50
   ) {
     try {
-      const conversation = await this.resolveAccessibleConversation(
-        conversationId,
-        userId
-      );
+      // Verify user has access to this conversation
+      const conversation = await Conversation.findOne({
+        where: {
+          id: conversationId,
+          [Op.or]: [
+            { clientId: userId },
+            { providerId: userId },
+          ],
+        },
+      });
 
       if (!conversation) {
-        const accessError: any = new Error(
-          'Conversation not found or access denied'
-        );
-        accessError.statusCode = 403;
-        throw accessError;
+        throw new Error('Conversation not found or access denied');
       }
 
-      const accessibleId = conversation.id;
       const offset = (page - 1) * limit;
 
       const { count, rows: messages } = await Message.findAndCountAll({
-        where: { conversationId: accessibleId },
+        where: { conversationId },
         include: [
           { model: User, as: 'sender', attributes: [...CHAT_USER_ATTRIBUTES] },
         ],
         order: [['createdAt', 'ASC']],
         limit,
         offset,
-        distinct: true,
       });
 
       return {
-        messages,
-        conversationId: accessibleId,
+        messages, // Already in correct order (oldest first)
         pagination: {
           total: count,
           page,
@@ -385,21 +322,11 @@ export class ChatService {
     try {
       const offset = (page - 1) * limit;
 
-      const user = await User.findByPk(userId, {
-        attributes: ['id', 'isTeamMember', 'teamOwnerId'],
-      });
-      const participantIds = [userId];
-      if (user?.isTeamMember && user.teamOwnerId) {
-        participantIds.push(user.teamOwnerId);
-      }
-
-      // Fetch a wider window then de-dupe swapped client/provider pairs so
-      // the same two users never appear as two chat threads.
-      const rows = await Conversation.findAll({
+      const { count, rows: conversations } = await Conversation.findAndCountAll({
         where: {
           [Op.or]: [
-            { clientId: { [Op.in]: participantIds } },
-            { providerId: { [Op.in]: participantIds } },
+            { clientId: userId },
+            { providerId: userId },
           ],
         },
         include: [
@@ -408,84 +335,25 @@ export class ChatService {
           {
             model: Message,
             as: 'messages',
-            limit: 20,
-            separate: true,
+            limit: 1,
             order: [['createdAt', 'DESC']],
             include: [
               { model: User, as: 'sender', attributes: ['id', 'name'] },
             ],
           },
         ],
-        order: [
-          ['lastMessageAt', 'DESC'],
-          ['updatedAt', 'DESC'],
-        ],
+        order: [['lastMessageAt', 'DESC']],
+        limit,
+        offset,
       });
-
-      const pairKey = (c: Conversation) =>
-        [c.clientId, c.providerId].sort().join(':');
-
-      const dedupedMap = new Map<string, Conversation>();
-      for (const conversation of rows) {
-        const key = pairKey(conversation);
-        const existing = dedupedMap.get(key);
-        if (!existing) {
-          dedupedMap.set(key, conversation);
-          continue;
-        }
-
-        // Prefer the thread where the requesting user is a direct participant.
-        const existingIsMine =
-          existing.clientId === userId || existing.providerId === userId;
-        const nextIsMine =
-          conversation.clientId === userId || conversation.providerId === userId;
-        if (nextIsMine && !existingIsMine) {
-          dedupedMap.set(key, conversation);
-          continue;
-        }
-        if (existingIsMine && !nextIsMine) {
-          continue;
-        }
-
-        const existingTime = existing.lastMessageAt?.getTime() ?? 0;
-        const nextTime = conversation.lastMessageAt?.getTime() ?? 0;
-        if (nextTime >= existingTime) {
-          dedupedMap.set(key, conversation);
-        }
-      }
-
-      const byId = new Map<string, Conversation>();
-      for (const conversation of dedupedMap.values()) {
-        byId.set(conversation.id, conversation);
-      }
-
-      const deduped = Array.from(byId.values()).sort((a, b) => {
-        const aTime = a.lastMessageAt?.getTime() ?? 0;
-        const bTime = b.lastMessageAt?.getTime() ?? 0;
-        return bTime - aTime;
-      });
-
-      // Keep latest message for preview + recent unread for accurate badges.
-      for (const conversation of deduped) {
-        const msgs = (conversation as any).messages as Message[] | undefined;
-        if (!msgs || msgs.length === 0) continue;
-        const latest = msgs[0];
-        const unreadOthers = msgs.filter(
-          (m) => !m.isRead && m.senderId !== userId && m.id !== latest.id
-        );
-        (conversation as any).messages = [latest, ...unreadOthers];
-      }
-
-      const total = deduped.length;
-      const conversations = deduped.slice(offset, offset + limit);
 
       return {
         conversations,
         pagination: {
-          total,
+          total: count,
           page,
           limit,
-          totalPages: Math.ceil(total / limit) || 1,
+          totalPages: Math.ceil(count / limit),
         },
       };
     } catch (error) {
@@ -499,19 +367,11 @@ export class ChatService {
    */
   static async markMessagesAsRead(conversationId: string, userId: string): Promise<void> {
     try {
-      const conversation = await this.resolveAccessibleConversation(
-        conversationId,
-        userId
-      );
-      if (!conversation) {
-        return;
-      }
-
       await Message.update(
         { isRead: true },
         {
           where: {
-            conversationId: conversation.id,
+            conversationId,
             senderId: { [Op.ne]: userId }, // Mark messages from others as read
             isRead: false,
           },
@@ -586,36 +446,26 @@ export class ChatService {
    */
   static async getUnreadMessageCount(userId: string): Promise<number> {
     try {
-      // Avoid fragile Message.count({ include }) which can return 0 / throw
-      // depending on dialect — resolve conversation IDs first, then count.
-      const user = await User.findByPk(userId, {
-        attributes: ['id', 'isTeamMember', 'teamOwnerId'],
-      });
-      const participantIds = [userId];
-      if (user?.isTeamMember && user.teamOwnerId) {
-        participantIds.push(user.teamOwnerId);
-      }
-
-      const conversations = await Conversation.findAll({
+      const count = await Message.count({
+        include: [
+          {
+            model: Conversation,
+            as: 'conversation',
+            where: {
+              [Op.or]: [
+                { clientId: userId },
+                { providerId: userId },
+              ],
+            },
+          },
+        ],
         where: {
-          [Op.or]: [
-            { clientId: { [Op.in]: participantIds } },
-            { providerId: { [Op.in]: participantIds } },
-          ],
-        },
-        attributes: ['id'],
-      });
-
-      const conversationIds = conversations.map((c) => c.id);
-      if (conversationIds.length === 0) return 0;
-
-      return Message.count({
-        where: {
-          conversationId: { [Op.in]: conversationIds },
           senderId: { [Op.ne]: userId },
           isRead: false,
         },
       });
+
+      return count;
     } catch (error) {
       console.error('Error getting unread count:', error);
       return 0;
