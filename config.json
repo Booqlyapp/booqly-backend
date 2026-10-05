@@ -1,20 +1,20 @@
 {
   "development": {
-    "username": "mybooqlydbuserdev",
-    "password": "My!23booqlydbuserdevpass",
-    "database": "mybooqlydbdev",
+  "username": "booqly_fresh_user",
+  "password": "BOOQLYnewStrongPass@12!!booqly",
+  "database": "booqly_fresh",
     "host": "72.61.117.9",
     "port": 5432,
     "dialect": "postgres",
     "logging": true
   },
-  "production": {
-    "username": "booqly_user",
-    "password": "Booqly!23dbuserpass",
-    "database": "booqly_production",
-    "host": "localhost",
-    "port": 5432,
-    "dialect": "postgres",
-    "logging": false
-  }
+"production": {
+  "username": "booqly_fresh_user",
+  "password": "BOOQLYnewStrongPass@12!!booqly",
+  "database": "booqly_fresh",
+  "host": "localhost",
+  "port": 5432,
+  "dialect": "postgres",
+  "logging": false
+}
 }
