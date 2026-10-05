@@ -21,6 +21,7 @@ interface CreateAppointmentData {
   price: number;
   depositAmount?: number;
   remainingBalance?: number;
+  assignedTeamMemberId?: string;
   services: Array<{
     serviceId: string;
     price: number;
@@ -48,7 +49,7 @@ export const createAppointment = async (
     const userId = req.user.id;
     
     // Destructure essential data from req.body
-    const { marketplaceId, dateTime, paymentStatus, price, services, depositAmount, remainingBalance } =
+    const { marketplaceId, dateTime, paymentStatus, price, services, depositAmount, remainingBalance, assignedTeamMemberId } =
       req.body as CreateAppointmentData;
 
     // Step 1: Validate essential fields
@@ -191,6 +192,48 @@ export const createAppointment = async (
       });
     }
 
+    // Validate assigned team member against the primary service providers (if any).
+    let resolvedAssignedTeamMemberId: string | null = null;
+    const primaryService = validServices.find(
+      (s) => s.id === services[0].serviceId
+    ) || validServices[0];
+    const serviceProviderIds = (primaryService.providerTeamMemberIds || []).map(
+      String
+    );
+
+    if (serviceProviderIds.length > 0) {
+      if (!assignedTeamMemberId) {
+        await transaction?.rollback();
+        return res.status(400).json({
+          status: false,
+          message: "Please select a service provider for this service.",
+        });
+      }
+      if (!serviceProviderIds.includes(String(assignedTeamMemberId))) {
+        await transaction?.rollback();
+        return res.status(400).json({
+          status: false,
+          message: "Selected service provider is not assigned to this service.",
+        });
+      }
+      const assignedMember = await User.findOne({
+        where: {
+          id: assignedTeamMemberId,
+          isTeamMember: true,
+          teamOwnerId: provider.id,
+        },
+        transaction,
+      });
+      if (!assignedMember) {
+        await transaction?.rollback();
+        return res.status(400).json({
+          status: false,
+          message: "Selected service provider was not found for this suite.",
+        });
+      }
+      resolvedAssignedTeamMemberId = assignedMember.id;
+    }
+
     // Optional: Validate that provided total price is reasonable (basic sanity check)
     // Note: Frontend handles add-ons calculation, so we only do a basic validation
     const baseServiceTotal = services.reduce(
@@ -214,6 +257,7 @@ export const createAppointment = async (
         userId,
         marketplaceId,
         serviceId: services[0].serviceId, // Use first service as primary service
+        assignedTeamMemberId: resolvedAssignedTeamMemberId,
         paymentStatus: paymentStatus ?? "pending",
         dateTime: appointmentDate,
         status: "pending", // Default
@@ -501,7 +545,8 @@ export const getAppointments = async (
       ...dateFilter,
     };
 
-    // Team members: total = suite-wide, limited = only their assigned bookings.
+    // Team members only see bookings assigned to them.
+    // Suite owner (non-team-member) sees the full marketplace calendar.
     const requester = req.user as User | undefined;
     if (requester?.isTeamMember) {
       const permissions = await getTeamMemberPermissionsForUser(requester);
@@ -512,9 +557,7 @@ export const getAppointments = async (
           message: "You do not have permission to view bookings.",
         });
       }
-      if (scope === "limited") {
-        whereClause.assignedTeamMemberId = requester.id;
-      }
+      whereClause.assignedTeamMemberId = requester.id;
     }
 
     // Fetch appointments with includes

@@ -992,9 +992,7 @@ export const getExternalAppointments = async (
           message: "You do not have permission to view bookings.",
         });
       }
-      if (scope === "limited") {
-        whereClause.assignedTeamMemberId = requester.id;
-      }
+      whereClause.assignedTeamMemberId = requester.id;
     }
 
     // Fetch external appointments

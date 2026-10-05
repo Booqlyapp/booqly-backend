@@ -2128,6 +2128,7 @@ export const getMarketplaceById = async (req: any, res: Response) => {
             'id', 'name', 'category', 'subcategory', 'categoryId', 'subcategoryId',
             'description', 'price', 'duration', 'marketplaceId', 'isActive',
             'requireDeposit', 'depositType', 'depositAmount', 'imageUrl',
+            'providerTeamMemberIds',
             'createdAt', 'updatedAt', 'deletedAt'
           ],
           include: [{
@@ -2262,6 +2263,50 @@ export const getMarketplaceById = async (req: any, res: Response) => {
           return imagePath;
         }
         return `${req.protocol}://${req.get('host')}/uploads/${imagePath}`;
+      });
+    }
+
+    // Attach provider team member names for client booking selection.
+    if (Array.isArray(responseData.services) && responseData.services.length > 0) {
+      const allProviderIds = Array.from(
+        new Set(
+          responseData.services.flatMap(
+            (s: any) =>
+              (Array.isArray(s.providerTeamMemberIds)
+                ? s.providerTeamMemberIds
+                : []
+              ).map((id: any) => String(id))
+          )
+        )
+      ) as string[];
+
+      let providerMap: Record<string, string> = {};
+      if (allProviderIds.length > 0) {
+        const providers = await User.findAll({
+          where: {
+            id: allProviderIds,
+            isTeamMember: true,
+          },
+          attributes: ["id", "name"],
+        });
+        providerMap = Object.fromEntries(
+          providers.map((p) => [p.id, p.name || "Team member"])
+        );
+      }
+
+      responseData.services = responseData.services.map((service: any) => {
+        const ids = Array.isArray(service.providerTeamMemberIds)
+          ? service.providerTeamMemberIds.map((id: any) => String(id))
+          : [];
+        return {
+          ...service,
+          providerTeamMembers: ids
+            .filter((id: string) => Boolean(providerMap[id]))
+            .map((id: string) => ({
+              id,
+              name: providerMap[id],
+            })),
+        };
       });
     }
 

@@ -2,6 +2,7 @@ import { Response } from "express";
 import { Service } from "../models/service_model";
 import { ServiceAddOn } from "../models/service_addon_model";
 import { Marketplace } from "../models/marketplace_model";
+import { User } from "../models/user_model";
 import { AuthRequest } from "../middlewares/auth.middleware";
 import { localFileStorage } from "../utils/local-storage";
 import { ALLOWED_MIMETYPES, MAX_FILE_SIZE } from "../utils/multer-config";
@@ -15,12 +16,54 @@ type UpdateServiceData = Partial<{
   requireDeposit: boolean;
   depositType: 'fixed' | 'percentage';
   depositAmount: number;
+  providerTeamMemberIds: string[];
   addOns: Array<{
     id?: string;
     title: string;
     price: number;
   }>;
 }>;
+
+function parseProviderTeamMemberIds(raw: unknown): string[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (Array.isArray(raw)) {
+    return raw.map((id) => String(id)).filter((id) => id.length > 0);
+  }
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((id) => String(id)).filter((id) => id.length > 0);
+      }
+    } catch {
+      return [trimmed];
+    }
+  }
+  return undefined;
+}
+
+async function filterValidProviderIds(
+  ownerId: string,
+  ids: string[]
+): Promise<string[]> {
+  if (!ids.length) return [];
+  const members = await User.findAll({
+    where: {
+      id: ids,
+      teamOwnerId: ownerId,
+      isTeamMember: true,
+    },
+    attributes: ["id"],
+  });
+  return members.map((m) => m.id);
+}
+
+function isAssignedServiceProvider(service: Service, userId: string): boolean {
+  const ids = service.providerTeamMemberIds || [];
+  return ids.map(String).includes(String(userId));
+}
 
 export const updateService = async (
   req: any,
@@ -58,9 +101,13 @@ export const updateService = async (
       });
     }
 
-    // Verify user owns the marketplace that this service belongs to
+    // Verify user owns the marketplace that this service belongs to,
+    // or is a team member assigned as a provider for this service.
     const user = req.user;
-    if (user.marketplaceId !== service.marketplaceId) {
+    const sharesMarketplace = user.marketplaceId === service.marketplaceId;
+    const assignedProvider =
+      user.isTeamMember === true && isAssignedServiceProvider(service, user.id);
+    if (!sharesMarketplace && !assignedProvider) {
       return res.status(403).json({
         status: false,
         message: "You can only update services for your own marketplace.",
@@ -113,6 +160,17 @@ export const updateService = async (
     if (depositType !== undefined) updateData.depositType = depositType;
     if (depositAmount !== undefined) updateData.depositAmount = Number(depositAmount);
     if (imageUrl !== undefined) (updateData as any).imageUrl = imageUrl;
+
+    // Only suite owners (not team members) can change service provider assignments.
+    const parsedProviderIds = parseProviderTeamMemberIds(
+      req.body.providerTeamMemberIds
+    );
+    if (parsedProviderIds !== undefined && user.isTeamMember !== true) {
+      updateData.providerTeamMemberIds = await filterValidProviderIds(
+        user.id,
+        parsedProviderIds
+      );
+    }
 
     if (Object.keys(updateData).length === 0) {
       return res.status(200).json({
@@ -242,7 +300,8 @@ export const updateService = async (
       attributes: [
         'id', 'name', 'category', 'subcategory', 'categoryId', 'subcategoryId',
         'description', 'price', 'duration', 'marketplaceId', 'isActive',
-        'requireDeposit', 'depositType', 'depositAmount',
+        'requireDeposit', 'depositType', 'depositAmount', 'imageUrl',
+        'providerTeamMemberIds',
         'createdAt', 'updatedAt', 'deletedAt'
       ],
       include: [{
@@ -392,6 +451,14 @@ export const createService = async (
     }
 
     // Step 3: Create the service
+    const parsedProviderIds = parseProviderTeamMemberIds(
+      req.body.providerTeamMemberIds
+    );
+    const providerTeamMemberIds =
+      user.isTeamMember !== true && parsedProviderIds !== undefined
+        ? await filterValidProviderIds(user.id, parsedProviderIds)
+        : [];
+
     const newService = await Service.create({
       marketplaceId,
       name: name.trim(),
@@ -407,6 +474,7 @@ export const createService = async (
       depositType: requireDeposit ? depositType : undefined,
       depositAmount: requireDeposit ? depositAmount : undefined,
       imageUrl: imageUrl,
+      providerTeamMemberIds,
     });
 
     // Step 4: Create add-ons if provided
@@ -446,7 +514,8 @@ export const createService = async (
       attributes: [
         'id', 'name', 'category', 'subcategory', 'categoryId', 'subcategoryId',
         'description', 'price', 'duration', 'marketplaceId', 'isActive',
-        'requireDeposit', 'depositType', 'depositAmount',
+        'requireDeposit', 'depositType', 'depositAmount', 'imageUrl',
+        'providerTeamMemberIds',
         'createdAt', 'updatedAt', 'deletedAt'
       ],
       include: [{
@@ -508,6 +577,7 @@ export const getServices = async (
         'id', 'name', 'category', 'subcategory', 'categoryId', 'subcategoryId',
         'description', 'price', 'duration', 'marketplaceId', 'isActive',
         'requireDeposit', 'depositType', 'depositAmount', 'imageUrl',
+        'providerTeamMemberIds',
         'createdAt', 'updatedAt', 'deletedAt'
       ],
       include: [{
@@ -626,6 +696,7 @@ export const getServiceById = async (req: AuthRequest, res: Response): Promise<a
         'id', 'name', 'category', 'subcategory', 'categoryId', 'subcategoryId',
         'description', 'price', 'duration', 'marketplaceId', 'isActive',
         'requireDeposit', 'depositType', 'depositAmount', 'imageUrl',
+        'providerTeamMemberIds',
         'createdAt', 'updatedAt', 'deletedAt'
       ]
     });

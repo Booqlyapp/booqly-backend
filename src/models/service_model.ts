@@ -31,6 +31,8 @@ interface ServiceAttributes {
   depositType?: 'fixed' | 'percentage';
   depositAmount?: number;
   imageUrl?: string;
+  /** Suite team members assigned as providers for this service */
+  providerTeamMemberIds: CreationOptional<string[]>;
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
   deletedAt: CreationOptional<Date> | null;
@@ -55,6 +57,7 @@ export class Service
   declare depositType?: 'fixed' | 'percentage';
   declare depositAmount?: number;
   declare imageUrl?: string;
+  declare providerTeamMemberIds: CreationOptional<string[]>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare deletedAt: CreationOptional<Date> | null;
@@ -160,6 +163,11 @@ export default function initService(sequelize: Sequelize) {
       imageUrl: {
         type: DataTypes.STRING,
         allowNull: true,
+      },
+      providerTeamMemberIds: {
+        type: DataTypes.ARRAY(DataTypes.UUID),
+        allowNull: false,
+        defaultValue: [],
       },
       createdAt: {
         type: DataTypes.DATE,
