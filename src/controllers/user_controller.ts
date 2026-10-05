@@ -68,8 +68,11 @@ export const updateUserData = async (req: AuthRequest, res: Response): Promise<a
       updatedData.phone = phone;
     }
 
-    // Only update businessName if it's different from the current businessName
-    if (businessName !== undefined && businessName !== user.businessName) {
+    // Clients only have a personal name — never accept businessName updates from them.
+    if (user.role === "client" && businessName !== undefined) {
+      // Ignore businessName for clients so a personal-name edit cannot affect
+      // provider/marketplace identity fields.
+    } else if (businessName !== undefined && businessName !== user.businessName) {
       // Validate businessName is required for non-client roles
       if (user.role !== 'client' && (!businessName || businessName.trim() === '')) {
         return res.status(400).json({
@@ -80,34 +83,46 @@ export const updateUserData = async (req: AuthRequest, res: Response): Promise<a
       updatedData.businessName = businessName ? businessName.trim() : null;
     }
 
+    // Personal name updates must never modify Marketplace.businessName.
+    // Only Users.name for the authenticated account is updated above.
+
     // If there are updates to apply
     if (Object.keys(updatedData).length > 0) {
-      // Ensure only the changed fields are updated
+      // Ensure only the changed fields are updated on THIS authenticated user.
       await user.update(updatedData);
-      // Fetch updated user data
-      const updatedUser = await User.findOne({ where: { id: user.id } });
-      return res.status(200).json({
-        status: true,
-        message: "User data updated successfully",
-        data: {
-          id: updatedUser?.id,
-          name: updatedUser?.name,
-          email: updatedUser?.email,
-          phone: updatedUser?.phone,
-          role: updatedUser?.role,
-          businessName: updatedUser?.businessName,
-          profilePic: updatedUser?.profilePic,
-          accountVerified: updatedUser?.accountVerified,
-          createdAt: updatedUser?.createdAt,
-          updatedAt: updatedUser?.updatedAt
+    }
+
+    // Always return the full current user for this token (never another account).
+    const updatedUser = await User.findOne({
+      where: { id: user.id },
+      include: [
+        {
+          model: Marketplace,
+          as: "marketplace",
+          attributes: ["id", "businessName", "phoneNumber", "address", "userId"],
         },
+      ],
+    });
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        status: false,
+        message: "User not found after update",
       });
     }
 
-    // No changes to update
+    if (Object.keys(updatedData).length === 0) {
+      return res.status(200).json({
+        status: false,
+        message: "No changes to update",
+        data: updatedUser,
+      });
+    }
+
     return res.status(200).json({
-      status: false,
-      message: "No changes to update",
+      status: true,
+      message: "User data updated successfully",
+      data: updatedUser,
     });
   } catch (error) {
     console.error("Error updating user data:", error);

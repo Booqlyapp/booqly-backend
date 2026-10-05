@@ -1171,6 +1171,24 @@ export const getMarketplaces = async (
             },
             {
               model: User,
+              as: "provider",
+              attributes: [
+                "id",
+                "name",
+                "email",
+                "role",
+                "currentSubscriptionId",
+                "status",
+                "accountVerified",
+                "professionalVerified",
+                "businessVerified",
+              ],
+              required: false,
+            },
+            {
+              // Do not use ambiguous marketplaceId→User hasOne (team members share
+              // marketplaceId). Keep for backward compat but exclude team members.
+              model: User,
               as: "user",
               attributes: [
                 "id",
@@ -1183,6 +1201,8 @@ export const getMarketplaces = async (
                 "professionalVerified",
                 "businessVerified",
               ],
+              where: { isTeamMember: false },
+              required: false,
             },
           ],
           limit: queryLimit,
@@ -1275,6 +1295,24 @@ export const getMarketplaces = async (
             },
             {
               model: User,
+              as: "provider",
+              attributes: [
+                "id",
+                "name",
+                "email",
+                "role",
+                "currentSubscriptionId",
+                "status",
+                "accountVerified",
+                "professionalVerified",
+                "businessVerified",
+              ],
+              required: false,
+            },
+            {
+              // Do not use ambiguous marketplaceId→User hasOne (team members share
+              // marketplaceId). Keep for backward compat but exclude team members.
+              model: User,
               as: "user",
               attributes: [
                 "id",
@@ -1287,6 +1325,8 @@ export const getMarketplaces = async (
                 "professionalVerified",
                 "businessVerified",
               ],
+              where: { isTeamMember: false },
+              required: false,
             },
           ],
           limit: MAX_FETCH_FOR_NEAREST,
@@ -1379,6 +1419,22 @@ export const getMarketplaces = async (
           },
           {
             model: User,
+            as: "provider",
+            attributes: [
+              "id",
+              "name",
+              "email",
+              "role",
+              "currentSubscriptionId",
+              "status",
+              "accountVerified",
+              "professionalVerified",
+              "businessVerified",
+            ],
+            required: false,
+          },
+          {
+            model: User,
             as: "user",
             attributes: [
               "id",
@@ -1391,6 +1447,8 @@ export const getMarketplaces = async (
               "professionalVerified",
               "businessVerified",
             ],
+            where: { isTeamMember: false },
+            required: false,
           },
         ],
         limit: queryLimit,
@@ -2187,6 +2245,7 @@ export const getMarketplaceById = async (req: any, res: Response) => {
             'isTeamMember',
             'teamOwnerId',
           ],
+          where: { isTeamMember: false },
           required: false,
         },
       ],

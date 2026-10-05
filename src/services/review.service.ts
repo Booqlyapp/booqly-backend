@@ -41,8 +41,9 @@ export class ReviewService {
             attributes: ['id', 'businessName', 'userId'],
             include: [{
               model: User,
-              as: 'user',
+              as: 'provider',
               attributes: ['id', 'name', 'profilePic'],
+              required: false,
             }],
           },
         ];
@@ -95,7 +96,8 @@ export class ReviewService {
               appointmentDate: appointment.dateTime,
               appointmentPrice: appointment.price,
               providerId: (appointment as any).marketplace?.userId,
-              providerName: (appointment as any).marketplace?.user?.name || (appointment as any).marketplace?.businessName,
+              providerName: (appointment as any).marketplace?.businessName ||
+                (appointment as any).marketplace?.provider?.name,
               businessName: (appointment as any).marketplace?.businessName,
             });
           } else if (existingReview && !existingReview.clientPrompted && (!existingReview.rating || existingReview.rating === 0)) {
@@ -105,7 +107,8 @@ export class ReviewService {
               appointmentDate: appointment.dateTime,
               appointmentPrice: appointment.price,
               providerId: (appointment as any).marketplace?.userId,
-              providerName: (appointment as any).marketplace?.user?.name || (appointment as any).marketplace?.businessName,
+              providerName: (appointment as any).marketplace?.businessName ||
+                (appointment as any).marketplace?.provider?.name,
               businessName: (appointment as any).marketplace?.businessName,
             });
           }
