@@ -13,14 +13,27 @@ export async function getTeamMemberPermissionsForUser(
   });
 }
 
+function hasAnySplitPermissionFlags(
+  permissions: TeamMemberPermission
+): boolean {
+  return (
+    Boolean(permissions.viewTotalBookings) ||
+    Boolean(permissions.viewLimitedBookings) ||
+    Boolean(permissions.viewTotalEarnings) ||
+    Boolean(permissions.viewLimitedEarnings)
+  );
+}
+
 export function getBookingScope(
   permissions: TeamMemberPermission | null | undefined
 ): TeamBookingScope {
   if (!permissions) return "none";
   if (permissions.viewTotalBookings) return "all";
   if (permissions.viewLimitedBookings) return "limited";
-  // Legacy unified flag
-  if (permissions.viewBookings) return "all";
+  // Pre-migration clients only had the unified flag (full suite-wide access).
+  if (!hasAnySplitPermissionFlags(permissions) && permissions.viewBookings) {
+    return "all";
+  }
   return "none";
 }
 
@@ -30,6 +43,10 @@ export function getEarningsScope(
   if (!permissions) return "none";
   if (permissions.viewTotalEarnings) return "all";
   if (permissions.viewLimitedEarnings) return "limited";
-  if (permissions.viewBookings) return "all";
+  // Pre-migration clients only had the unified flag (full suite-wide access).
+  // Do not treat the synced viewBookings bookings flag as earnings access.
+  if (!hasAnySplitPermissionFlags(permissions) && permissions.viewBookings) {
+    return "all";
+  }
   return "none";
 }
