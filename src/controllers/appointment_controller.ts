@@ -150,12 +150,23 @@ export const createAppointment = async (
     }
 
     // Step 2.5: Check if client can book with this provider
-    // Find the provider (user) who owns this marketplace
-    const provider = await User.findOne({
-      where: { marketplaceId: marketplaceId },
-      transaction,
-    });
-    
+    // Resolve the suite/solo OWNER only — team members share marketplaceId,
+    // so findOne({ marketplaceId }) can wrongly return a team member and break
+    // assignedTeamMemberId validation (teamOwnerId must be the owner).
+    let provider: User | null = null;
+    if (marketplace.userId) {
+      provider = await User.findByPk(marketplace.userId, { transaction });
+    }
+    if (!provider) {
+      provider = await User.findOne({
+        where: {
+          marketplaceId: marketplaceId,
+          isTeamMember: false,
+        },
+        transaction,
+      });
+    }
+
     if (!provider) {
       await transaction?.rollback();
       return res.status(200).json({
