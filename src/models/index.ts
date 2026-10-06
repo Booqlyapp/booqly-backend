@@ -24,6 +24,7 @@ import initPromotion, { Promotion } from "./promotion_model";
 import initServiceAddOn, { ServiceAddOn } from "./service_addon_model";
 import initFriend, { Friend } from "./friend_model";
 import initExternalAppointment, { ExternalAppointment } from "./external_appointment_model";
+import initBlockedTime, { BlockedTime } from "./blocked_time_model";
 import initWaitlist, { Waitlist } from "./waitlist_model";
 import initVideo, { Video } from "./video_model";
 import initVideoLike, { VideoLike } from "./video_like_model";
@@ -38,7 +39,7 @@ import initSupportTicketMessage, {
   SupportTicketMessage,
 } from "./support_ticket_message_model";
 
-export { Category, Subcategory, Promotion, ServiceAddOn, Friend, ExternalAppointment, Waitlist, Video, VideoLike, VideoComment, VideoCommentReaction, VideoFollow, TeamMemberPermission, ContentReport, Announcement, SupportTicket, SupportTicketMessage };
+export { Category, Subcategory, Promotion, ServiceAddOn, Friend, ExternalAppointment, BlockedTime, Waitlist, Video, VideoLike, VideoComment, VideoCommentReaction, VideoFollow, TeamMemberPermission, ContentReport, Announcement, SupportTicket, SupportTicketMessage };
 
 export function initModels(sequelize: Sequelize) {
   initUser(sequelize);
@@ -64,6 +65,7 @@ export function initModels(sequelize: Sequelize) {
   initServiceAddOn(sequelize);
   initFriend(sequelize);
   initExternalAppointment(sequelize);
+  initBlockedTime(sequelize);
   initWaitlist(sequelize);
   initVideo(sequelize);
   initVideoLike(sequelize);
@@ -665,6 +667,23 @@ export function initModels(sequelize: Sequelize) {
     as: "supportTicketMessages",
   });
 
+  Marketplace.hasMany(BlockedTime, {
+    foreignKey: "marketplaceId",
+    as: "blockedTimes",
+  });
+  BlockedTime.belongsTo(Marketplace, {
+    foreignKey: "marketplaceId",
+    as: "marketplace",
+  });
+  User.hasMany(BlockedTime, {
+    foreignKey: "createdByUserId",
+    as: "createdBlockedTimes",
+  });
+  BlockedTime.belongsTo(User, {
+    foreignKey: "createdByUserId",
+    as: "createdBy",
+  });
+
   return {
     User,
     Marketplace,
@@ -689,6 +708,7 @@ export function initModels(sequelize: Sequelize) {
     ServiceAddOn,
     Friend,
     ExternalAppointment,
+    BlockedTime,
     Video,
     VideoLike,
     VideoComment,

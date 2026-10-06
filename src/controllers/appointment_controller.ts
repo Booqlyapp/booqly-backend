@@ -348,6 +348,316 @@ export const createAppointment = async (
   }
 };
 
+/**
+ * Provider-created appointment for an existing client (solo/suite home calendar flow).
+ * Unlike createAppointment, the authenticated user is the provider — clientId is required.
+ */
+export const createProviderAppointment = async (
+  req: any,
+  res: Response
+): Promise<Response> => {
+  const transaction = await Appointment.sequelize?.transaction();
+  try {
+    const requester = req.user as User;
+    if (!requester || (requester.role !== "solo" && requester.role !== "suite")) {
+      await transaction?.rollback();
+      return res.status(403).json({
+        status: false,
+        message: "Only providers can create appointments for clients.",
+      });
+    }
+
+    const {
+      clientId,
+      marketplaceId,
+      dateTime,
+      paymentStatus,
+      price,
+      services,
+      depositAmount,
+      remainingBalance,
+      assignedTeamMemberId,
+    } = req.body as CreateAppointmentData & { clientId?: string };
+
+    if (
+      !clientId ||
+      !marketplaceId ||
+      !dateTime ||
+      !price ||
+      !services ||
+      !Array.isArray(services) ||
+      services.length === 0
+    ) {
+      await transaction?.rollback();
+      return res.status(400).json({
+        status: false,
+        message:
+          "Missing or invalid required fields: clientId, marketplaceId, dateTime, price, and services array.",
+      });
+    }
+
+    if (price <= 0) {
+      await transaction?.rollback();
+      return res.status(400).json({
+        status: false,
+        message: "price must be a valid positive number.",
+      });
+    }
+
+    const appointmentDate = new Date(dateTime);
+    if (isNaN(appointmentDate.getTime()) || appointmentDate <= new Date()) {
+      await transaction?.rollback();
+      return res.status(400).json({
+        status: false,
+        message:
+          "The provided dateTime must be a valid ISO date set in the future.",
+      });
+    }
+
+    for (let i = 0; i < services.length; i++) {
+      const svc = services[i];
+      if (
+        !svc.serviceId ||
+        !svc.price ||
+        svc.price <= 0 ||
+        (svc.quantity !== undefined && svc.quantity <= 0)
+      ) {
+        await transaction?.rollback();
+        return res.status(400).json({
+          status: false,
+          message: `Invalid service at index ${i}: serviceId and price are required.`,
+        });
+      }
+    }
+
+    const marketplace = await Marketplace.findByPk(marketplaceId, {
+      transaction,
+    });
+    if (!marketplace) {
+      await transaction?.rollback();
+      return res.status(404).json({
+        status: false,
+        message: "Marketplace not found.",
+      });
+    }
+
+    const isMarketplaceOwner = marketplace.userId === requester.id;
+    const isTeamMemberOfMarketplace =
+      requester.isTeamMember === true &&
+      requester.teamOwnerId === marketplace.userId;
+    if (!isMarketplaceOwner && !isTeamMemberOfMarketplace) {
+      await transaction?.rollback();
+      return res.status(403).json({
+        status: false,
+        message: "You do not have access to this marketplace.",
+      });
+    }
+
+    const client = await User.findOne({
+      where: { id: clientId, role: "client" },
+      transaction,
+    });
+    if (!client) {
+      await transaction?.rollback();
+      return res.status(404).json({
+        status: false,
+        message: "Selected client was not found.",
+      });
+    }
+
+    let provider: User | null = null;
+    if (marketplace.userId) {
+      provider = await User.findByPk(marketplace.userId, { transaction });
+    }
+    if (!provider) {
+      provider = await User.findOne({
+        where: { marketplaceId, isTeamMember: false },
+        transaction,
+      });
+    }
+    if (!provider) {
+      await transaction?.rollback();
+      return res.status(404).json({
+        status: false,
+        message: "Provider not found for this marketplace.",
+      });
+    }
+
+    const canBook = await SubscriptionService.canClientBook(
+      client.id,
+      provider.id
+    );
+    if (!canBook.canBook) {
+      await transaction?.rollback();
+      return res.status(403).json({
+        status: false,
+        message: canBook.reason,
+      });
+    }
+
+    const isSlotOccupied = await WaitlistService.isSlotOccupied(
+      marketplaceId,
+      appointmentDate
+    );
+    if (isSlotOccupied) {
+      await transaction?.rollback();
+      return res.status(409).json({
+        status: false,
+        message: "This slot is fully booked.",
+      });
+    }
+
+    const serviceIds = services.map((svc) => svc.serviceId);
+    const validServices = await Service.findAll({
+      where: {
+        id: { [Op.in]: serviceIds },
+        marketplaceId,
+      },
+      transaction,
+    });
+    if (validServices.length !== serviceIds.length) {
+      await transaction?.rollback();
+      return res.status(400).json({
+        status: false,
+        message:
+          "One or more services not found or do not belong to the specified marketplace.",
+      });
+    }
+
+    // Resolve assigned team member: explicit id, or auto-assign when requester is a TM.
+    let resolvedAssignedTeamMemberId: string | null = null;
+    const primaryService =
+      validServices.find((s) => s.id === services[0].serviceId) ||
+      validServices[0];
+    const serviceProviderIds = (
+      primaryService.providerTeamMemberIds || []
+    ).map(String);
+    const requestedAssignee =
+      assignedTeamMemberId ||
+      (requester.isTeamMember ? requester.id : undefined);
+
+    if (serviceProviderIds.length > 0) {
+      if (!requestedAssignee) {
+        await transaction?.rollback();
+        return res.status(400).json({
+          status: false,
+          message: "Please select a service provider for this service.",
+        });
+      }
+      if (!serviceProviderIds.includes(String(requestedAssignee))) {
+        await transaction?.rollback();
+        return res.status(400).json({
+          status: false,
+          message: "Selected service provider is not assigned to this service.",
+        });
+      }
+      const assignedMember = await User.findOne({
+        where: {
+          id: requestedAssignee,
+          isTeamMember: true,
+          teamOwnerId: provider.id,
+        },
+        transaction,
+      });
+      if (!assignedMember) {
+        await transaction?.rollback();
+        return res.status(400).json({
+          status: false,
+          message: "Selected service provider was not found for this suite.",
+        });
+      }
+      resolvedAssignedTeamMemberId = assignedMember.id;
+    } else if (requestedAssignee && requester.isTeamMember) {
+      // Service has no fixed providers; still tag the booking to the TM who created it.
+      resolvedAssignedTeamMemberId = requester.id;
+    }
+
+    const baseServiceTotal = services.reduce(
+      (sum, svc) => sum + svc.price * (svc.quantity || 1),
+      0
+    );
+    if (price < baseServiceTotal || price > baseServiceTotal * 5) {
+      await transaction?.rollback();
+      return res.status(400).json({
+        status: false,
+        message: `Invalid total price (${price}). Expected between ${baseServiceTotal.toFixed(
+          2
+        )} and ${(baseServiceTotal * 5).toFixed(2)}.`,
+      });
+    }
+
+    const newAppointment = await Appointment.create(
+      {
+        userId: client.id,
+        marketplaceId,
+        serviceId: services[0].serviceId,
+        assignedTeamMemberId: resolvedAssignedTeamMemberId,
+        paymentStatus: paymentStatus ?? "pending",
+        dateTime: appointmentDate,
+        status: "pending",
+        price,
+        depositAmount,
+        remainingBalance,
+      },
+      { transaction }
+    );
+
+    const serviceStatuses: InferCreationAttributes<AppointmentServiceStatus>[] =
+      services.map((svc) => ({
+        appointmentId: newAppointment.id,
+        serviceId: svc.serviceId,
+      })) as InferCreationAttributes<AppointmentServiceStatus>[];
+
+    await AppointmentServiceStatus.bulkCreate(serviceStatuses, { transaction });
+
+    if (!client.freeBookingUsed) {
+      await client.update({ freeBookingUsed: true }, { transaction });
+    }
+
+    await transaction?.commit();
+    await WaitlistService.clearSlotWaitlist(
+      marketplaceId,
+      appointmentDate,
+      newAppointment.id
+    );
+
+    const createdAppointment = await Appointment.findByPk(newAppointment.id, {
+      include: [
+        { model: User, as: "user" },
+        {
+          model: Marketplace,
+          as: "marketplace",
+          include: [
+            {
+              model: Social,
+              as: "socials",
+              attributes: ["id", "insta", "tiktok", "facebook", "googlePlaceId"],
+            },
+          ],
+        },
+        {
+          model: Service,
+          as: "services",
+          through: { attributes: [] },
+        },
+      ],
+    });
+
+    return res.status(201).json({
+      status: true,
+      message: "Appointment created successfully.",
+      data: createdAppointment?.toJSON() ?? newAppointment.toJSON(),
+    });
+  } catch (err: any) {
+    await transaction?.rollback();
+    console.error("Error creating provider appointment:", err);
+    return res.status(500).json({
+      status: false,
+      message: `Internal server error: ${err.message || err}`,
+    });
+  }
+};
+
 // Create a Stripe PaymentIntent for an existing appointment, split between
 // the platform (1.5%) and the provider's connected Stripe account (98.5%).
 export const createAppointmentPaymentIntent = async (

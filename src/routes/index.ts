@@ -28,6 +28,7 @@ import FriendRoute from "./friend_route";
 import FavoriteRoute from "./favorite_route";
 import VideoRoute from "./video_route";
 import ExternalAppointmentRoute from "./external_appointment_route";
+import BlockedTimeRoute from "./blocked_time_route";
 import WebhookRoute from "./webhook_route";
 import WaitlistRoute from "./waitlist_route";
 import TeamMemberRoute from "./team_member_route";
@@ -78,6 +79,7 @@ router.use("/friends", FriendRoute);
 router.use("/favorites", FavoriteRoute);
 router.use("/videos", VideoRoute);
 router.use("/public", ExternalAppointmentRoute); // Public booking endpoints
+router.use("/blocked-times", BlockedTimeRoute);
 router.use("/waitlist", WaitlistRoute);
 router.use("/team-members", TeamMemberRoute);
 

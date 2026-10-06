@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
 import { Appointment } from "../models/appointment_model";
 import { ExternalAppointment } from "../models/external_appointment_model";
+import { BlockedTime } from "../models/blocked_time_model";
 import { Marketplace } from "../models/marketplace_model";
 import { Waitlist } from "../models/waitlist_model";
 import { NotificationService } from "./notification.service";
@@ -63,7 +64,7 @@ export class WaitlistService {
   ): Promise<boolean> {
     const { start, end } = this.getMinuteWindow(dateTime);
 
-    const [appointmentCount, externalCount] = await Promise.all([
+    const [appointmentCount, externalCount, blockedTimes] = await Promise.all([
       Appointment.count({
         where: {
           marketplaceId,
@@ -81,9 +82,40 @@ export class WaitlistService {
           dateTime: { [Op.between]: [start, end] },
         },
       }),
+      BlockedTime.findAll({
+        where: { marketplaceId },
+        attributes: ["startDateTime", "endDateTime", "frequency"],
+      }),
     ]);
 
-    return appointmentCount + externalCount > 0;
+    if (appointmentCount + externalCount > 0) return true;
+
+    const slotMinutes = dateTime.getHours() * 60 + dateTime.getMinutes();
+    for (const block of blockedTimes) {
+      if (block.frequency === "one_time") {
+        if (block.startDateTime <= end && block.endDateTime >= start) {
+          return true;
+        }
+      } else if (block.frequency === "daily") {
+        // Daily blocks apply from the original start date onward, same clock times.
+        const blockDayStart = new Date(block.startDateTime);
+        blockDayStart.setHours(0, 0, 0, 0);
+        const slotDayStart = new Date(dateTime);
+        slotDayStart.setHours(0, 0, 0, 0);
+        if (slotDayStart < blockDayStart) continue;
+
+        const startMinutes =
+          block.startDateTime.getHours() * 60 +
+          block.startDateTime.getMinutes();
+        const endMinutes =
+          block.endDateTime.getHours() * 60 + block.endDateTime.getMinutes();
+        if (slotMinutes >= startMinutes && slotMinutes < endMinutes) {
+          return true;
+        }
+      }
+    }
+
+    return false;
   }
 
   static async getMarketplaceSettings(marketplaceId: string): Promise<{ waitlistEnabled: boolean; claimWindowMinutes: number }> {

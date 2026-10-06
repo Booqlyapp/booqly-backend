@@ -1,6 +1,7 @@
 import { Router } from "express";
 import {
   createAppointment,
+  createProviderAppointment,
   createAppointmentPaymentIntent,
   getAppointments,
   getUserAppointments,
@@ -10,12 +11,18 @@ import {
   updateAppointmentPrice,
   updateAppointmentStatus,
 } from "../controllers/appointment_controller";
-import { authenticateToken, requireVerification } from "../middlewares/auth.middleware";
+import { authenticateToken, requireRole } from "../middlewares/auth.middleware";
 import { requireClientIdentityDocument } from "../middlewares/client-verification.middleware";
 
 const router = Router();
 
 router.post("/create-new-appointment", authenticateToken, requireClientIdentityDocument, createAppointment);
+router.post(
+  "/create-provider-appointment",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  createProviderAppointment
+);
 router.post("/:appointmentId/payment-intent", authenticateToken, createAppointmentPaymentIntent);
 router.get("/get-appointments", authenticateToken, getAppointments);
 router.get("/get-user-appointments", authenticateToken, getUserAppointments);

@@ -590,10 +590,48 @@ export const getServices = async (
       order: [['createdAt', 'DESC']]
     });
 
+    // Attach provider team member names for booking UIs.
+    const allProviderIds = Array.from(
+      new Set(
+        services.flatMap((s) =>
+          (s.providerTeamMemberIds || []).map((id) => String(id))
+        )
+      )
+    );
+    let providerMap: Record<string, string> = {};
+    if (allProviderIds.length > 0) {
+      const providers = await User.findAll({
+        where: {
+          id: allProviderIds,
+          isTeamMember: true,
+        },
+        attributes: ["id", "name"],
+      });
+      providerMap = Object.fromEntries(
+        providers.map((p) => [p.id, p.name || "Team member"])
+      );
+    }
+
+    const servicesWithProviders = services.map((service) => {
+      const json = service.toJSON() as any;
+      const ids = Array.isArray(json.providerTeamMemberIds)
+        ? json.providerTeamMemberIds.map((id: any) => String(id))
+        : [];
+      return {
+        ...json,
+        providerTeamMembers: ids
+          .filter((id: string) => Boolean(providerMap[id]))
+          .map((id: string) => ({
+            id,
+            name: providerMap[id],
+          })),
+      };
+    });
+
     return res.status(200).json({
       status: true,
       message: `Found ${services.length} services for marketplace`,
-      data: services,
+      data: servicesWithProviders,
     });
 
   } catch (error) {
