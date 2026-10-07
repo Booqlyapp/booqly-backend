@@ -441,6 +441,255 @@ function validateMRZ(text: string): { valid: boolean; details: string[] } {
   }
 }
 
+const PROFESSIONAL_LICENSE_KEYWORDS = [
+  "BOARD OF BARBERING AND COSMETOLOGY",
+  "BOARD OF COSMETOLOGY",
+  "STATE BOARD OF COSMETOLOGY AND BARBERS",
+  "DIVISION OF LICENSING SERVICES",
+  "DEPARTMENT OF BUSINESS AND PROFESSIONAL REGULATION",
+  "DEPARTMENT OF CONSUMER AFFAIRS",
+  "ESTHETICIAN",
+  "COSMETOLOGIST",
+  "COSMETOLOGY",
+  "BARBER",
+  "APPEARANCE ENHANCEMENT",
+  "COSMETOLOGY SALON",
+  "CE PROVIDER",
+  "HAS BEEN DULY LICENSED",
+  "POST IN PUBLIC VIEW",
+  "LICENSE NO",
+  "LICENSE NUMBER",
+  "VALID UNTIL",
+  "EXP DATE",
+  "EXPIRATION DATE",
+];
+
+const PROFESSIONAL_PLACEHOLDER_SIGNALS = [
+  "COMPANY NAME",
+  "XX-00000-XX",
+  "00/00/0000",
+];
+
+const EIN_KEYWORDS = [
+  "DEPARTMENT OF THE TREASURY",
+  "INTERNAL REVENUE SERVICE",
+  "WE ASSIGNED YOU AN EMPLOYER IDENTIFICATION NUMBER",
+  "EMPLOYER IDENTIFICATION NUMBER",
+  "FORM: SS-4",
+  "FORM SS-4",
+  "CP 575",
+  "CINCINNATI",
+];
+
+const EIN_FAKE_SIGNALS = [
+  "EXAMPLE ONLY",
+  "SAMPLE",
+  "SPECIMEN",
+  "FOR DISPLAY PURPOSES",
+];
+
+const LLC_KEYWORDS = [
+  "CERTIFICATE OF FORMATION",
+  "ARTICLES OF ORGANIZATION",
+  "CERTIFICATE OF ORGANIZATION",
+  "LIMITED LIABILITY COMPANY",
+  "SECRETARY OF STATE",
+  "DIVISION OF CORPORATIONS",
+  "CORPORATIONS DIVISION",
+  "DOMESTIC LIMITED LIABILITY COMPANY",
+  "FILED",
+];
+
+const LLC_REJECT_SIGNALS = [
+  "HAS NOT BEEN FILED",
+  "BEING RETURNED",
+  "RETURNED TO YOU FOR THE FOLLOWING REASON",
+];
+
+const EIN_NUMBER_PATTERN =
+  /\b(?:EIN|EMPLOYER IDENTIFICATION NUMBER)[:\s#]*([0-9]{2}\s*-\s*[0-9]{7})\b/i;
+const EIN_NUMBER_LOOSE_PATTERN = /\b([0-9]{2}-[0-9]{7})\b/;
+
+const LICENSE_NUMBER_PATTERN =
+  /\b(?:LICENSE\s*NO\.?|LICENSE\s*NUMBER|UNIQUE\s*ID\s*NUMBER|LIC(?:ENSE)?\s*#)\s*[:\-]?\s*([A-Z0-9][A-Z0-9\s\-]{3,20})\b/i;
+
+const EXPIRY_FIELD_PATTERNS: RegExp[] = [
+  /VALID\s+UNTIL\s*[:\-]?\s*([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+  /(?:VALID\s+)?UNTIL\s*[:\-]?\s*([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+  /EXP(?:IRATION)?\s*DATE\s*[:\-]?\s*([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+  /EXP\s*DATE\s*[:\-]?\s*([0-9]{1,2}[\/\-\.][0-9]{1,2}[\/\-\.][0-9]{2,4})/i,
+  /EXPIRATION\s*DATE\s*[:\-]?\s*MO\.?\s*([0-9]{1,2})\s*DAY\s*([0-9]{1,2})\s*YR\.?\s*([0-9]{2,4})/i,
+  /EXPIRATION\s*DATE[:\s]*([A-Z]{3,9}\.?\s+[0-9]{1,2},?\s+[0-9]{4})/i,
+  /EXP(?:IRES|IRATION)?\s*[:\-]?\s*([A-Z]{3,9}\.?\s+[0-9]{1,2},?\s+[0-9]{4})/i,
+  /EFFECTIVE\s*DATE[\s\S]{0,80}?EXPIRATION\s*DATE\s*MO\.?\s*[0-9]{1,2}\s*DAY\s*[0-9]{1,2}\s*YR\.?\s*[0-9]{2,4}[\s\S]{0,40}?MO\.?\s*([0-9]{1,2})\s*DAY\s*([0-9]{1,2})\s*YR\.?\s*([0-9]{2,4})/i,
+];
+
+function parseFlexibleDate(raw: string): Date | null {
+  const cleaned = raw.trim().replace(/\s+/g, " ");
+  const MONTH_MAP: Record<string, number> = {
+    JAN: 1, JANUARY: 1, FEB: 2, FEBRUARY: 2, MAR: 3, MARCH: 3,
+    APR: 4, APRIL: 4, MAY: 5, JUN: 6, JUNE: 6, JUL: 7, JULY: 7,
+    AUG: 8, AUGUST: 8, SEP: 9, SEPT: 9, SEPTEMBER: 9,
+    OCT: 10, OCTOBER: 10, NOV: 11, NOVEMBER: 11, DEC: 12, DECEMBER: 12,
+  };
+
+  const alpha = cleaned.match(
+    /^([A-Z]{3,9})\.?\s+([0-9]{1,2}),?\s+([0-9]{4})$/i
+  );
+  if (alpha) {
+    const month = MONTH_MAP[alpha[1].toUpperCase()];
+    const day = parseInt(alpha[2], 10);
+    const year = parseInt(alpha[3], 10);
+    if (month && day >= 1 && day <= 31 && year >= 1940 && year <= 2100) {
+      return new Date(year, month - 1, day, 23, 59, 59);
+    }
+  }
+
+  const numeric = cleaned.match(/^([0-9]{1,2})[\/\-\.]([0-9]{1,2})[\/\-\.]([0-9]{2,4})$/);
+  if (numeric) {
+    let month = parseInt(numeric[1], 10);
+    let day = parseInt(numeric[2], 10);
+    let year = parseInt(numeric[3], 10);
+    if (year < 100) year += 2000;
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31 && year >= 1940 && year <= 2100) {
+      return new Date(year, month - 1, day, 23, 59, 59);
+    }
+  }
+
+  return null;
+}
+
+function extractExpirationDate(text: string): { date: Date | null; raw: string | null; details: string[] } {
+  const details: string[] = [];
+  for (const pattern of EXPIRY_FIELD_PATTERNS) {
+    const match = text.match(pattern);
+    if (!match) continue;
+
+    if (match.length >= 4 && match[2] && match[3] && /^\d+$/.test(match[1]) && /^\d+$/.test(match[2])) {
+      // MO DAY YR form
+      const month = parseInt(match[1], 10);
+      const day = parseInt(match[2], 10);
+      let year = parseInt(match[3], 10);
+      if (year < 100) year += 2000;
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        const date = new Date(year, month - 1, day, 23, 59, 59);
+        details.push(`Found expiration: ${month}/${day}/${year}`);
+        return { date, raw: `${month}/${day}/${year}`, details };
+      }
+    }
+
+    const raw = match[1];
+    const date = parseFlexibleDate(raw);
+    if (date) {
+      details.push(`Found expiration: ${raw}`);
+      return { date, raw, details };
+    }
+    details.push(`Unparseable expiration value: ${raw}`);
+  }
+  return { date: null, raw: null, details };
+}
+
+function isPdfPath(filePath: string): boolean {
+  return path.extname(filePath).toLowerCase() === ".pdf";
+}
+
+async function getTextFromDocument(
+  filePath: string
+): Promise<{
+  text: string;
+  confidence: number;
+  quality: { earned: number; total: number; details: string[] };
+  source: "pdf-text" | "ocr";
+  cleanupPaths: string[];
+}> {
+  if (!isPdfPath(filePath)) {
+    const quality = await analyzeImageQuality(filePath);
+    const { text, confidence } = await runOCR(filePath);
+    return { text, confidence, quality, source: "ocr", cleanupPaths: [] };
+  }
+
+  const { extractPdfText, renderPdfPageToPng } = await import(
+    "../utils/pdf-utils"
+  );
+  const embedded = await extractPdfText(filePath);
+  if (embedded.trim().length >= 80) {
+    return {
+      text: embedded.trim(),
+      confidence: 90,
+      quality: {
+        earned: 25,
+        total: 30,
+        details: ["PDF contains embedded machine-readable text"],
+      },
+      source: "pdf-text",
+      cleanupPaths: [],
+    };
+  }
+
+  const previewPaths: string[] = [];
+  const texts: string[] = [];
+  let confidenceSum = 0;
+  let confCount = 0;
+  let quality = {
+    earned: 0,
+    total: 30,
+    details: ["Could not render PDF page for OCR"] as string[],
+  };
+
+  // OCR up to first 3 pages so return/rejection notices on page 2+ are visible.
+  const maxPages = 3;
+  for (let page = 1; page <= maxPages; page += 1) {
+    const previewPath = `${filePath}.ocr-preview-p${page}.png`;
+    const rendered = await renderPdfPageToPng(filePath, previewPath, page);
+    if (!rendered) {
+      break;
+    }
+    previewPaths.push(previewPath);
+    if (page === 1) {
+      quality = await analyzeImageQuality(previewPath);
+    }
+    const { text, confidence } = await runOCR(previewPath);
+    if (text.trim()) {
+      texts.push(text.trim());
+      confidenceSum += confidence;
+      confCount += 1;
+    }
+  }
+
+  if (previewPaths.length === 0) {
+    return {
+      text: "",
+      confidence: 0,
+      quality,
+      source: "ocr",
+      cleanupPaths: [],
+    };
+  }
+
+  return {
+    text: texts.join("\n\n"),
+    confidence: confCount ? confidenceSum / confCount : 0,
+    quality,
+    source: "ocr",
+    cleanupPaths: previewPaths,
+  };
+}
+
+function scoreStatus(
+  trustScore: number,
+  messageVerified: string,
+  messagePending: string,
+  messageRejected: string
+): { userStatus: "verified" | "pending" | "rejected"; message: string } {
+  if (trustScore >= 45) {
+    return { userStatus: "verified", message: messageVerified };
+  }
+  if (trustScore >= 25) {
+    return { userStatus: "pending", message: messagePending };
+  }
+  return { userStatus: "rejected", message: messageRejected };
+}
+
 export class DocumentVerificationService {
   /**
    * Run the full multi-signal verification pipeline against a saved
@@ -612,5 +861,508 @@ export class DocumentVerificationService {
       return null;
     }
     return this.verifyDocument(fullPath);
+  }
+
+  /**
+   * Professional license verification (cosmetology / esthetics / barber / salon /
+   * appearance enhancement / CE provider licenses from sample set).
+   */
+  static async verifyProfessionalLicense(
+    filePath: string
+  ): Promise<VerificationAnalysis> {
+    const errorFlags: string[] = [];
+    let cleanupPaths: string[] = [];
+
+    try {
+      const extracted = await getTextFromDocument(filePath);
+      cleanupPaths = extracted.cleanupPaths;
+      const quality = extracted.quality;
+      const ocrText = extracted.text;
+      const confidence = extracted.confidence;
+
+      let ocrEarned = 0;
+      const ocrDetails: string[] = [];
+
+      if (ocrText.length > 0) {
+        ocrEarned += 10;
+        ocrDetails.push(
+          `Extracted ${ocrText.length} characters (${extracted.source}, confidence ${Math.round(confidence)}%)`
+        );
+      } else {
+        ocrDetails.push("No text extracted from document");
+      }
+
+      const keywordHits = countKeywordHits(ocrText, PROFESSIONAL_LICENSE_KEYWORDS);
+      if (keywordHits >= 4) {
+        ocrEarned += 20;
+        ocrDetails.push(`Found ${keywordHits} professional license indicators`);
+      } else if (keywordHits >= 2) {
+        ocrEarned += 12;
+        ocrDetails.push(`Found ${keywordHits} professional license indicators`);
+      } else if (keywordHits === 1) {
+        ocrEarned += 5;
+        ocrDetails.push("Found 1 professional license indicator");
+      } else {
+        ocrDetails.push("No professional license indicators found");
+        return {
+          userStatus: "rejected",
+          trustScore: Math.max(0, quality.earned + Math.max(0, ocrEarned)),
+          message:
+            "This document does not appear to be a professional license. Please upload a clear photo of your state board / professional license.",
+          errorFlags: ["No professional license indicators found"],
+          checks: {
+            imageQuality: {
+              passed: quality.earned >= quality.total * 0.5,
+              earned: quality.earned,
+              total: quality.total,
+              details: quality.details,
+            },
+            textDetection: {
+              passed: false,
+              earned: Math.max(0, ocrEarned),
+              total: 45,
+              details: ocrDetails,
+            },
+            documentValidation: {
+              passed: false,
+              earned: 0,
+              total: 25,
+              details: ["Rejected: not a professional license document"],
+            },
+          },
+        };
+      }
+
+      const placeholderHits = countKeywordHits(
+        ocrText,
+        PROFESSIONAL_PLACEHOLDER_SIGNALS
+      );
+      if (placeholderHits > 0) {
+        return {
+          userStatus: "rejected",
+          trustScore: Math.max(0, quality.earned + Math.max(0, ocrEarned - 20)),
+          message:
+            "This looks like a blank or template license. Please upload your real, filled professional license.",
+          errorFlags: ["Document contains placeholder/template fields"],
+          checks: {
+            imageQuality: {
+              passed: quality.earned >= quality.total * 0.5,
+              earned: quality.earned,
+              total: quality.total,
+              details: quality.details,
+            },
+            textDetection: {
+              passed: false,
+              earned: Math.max(0, ocrEarned - 20),
+              total: 45,
+              details: [
+                ...ocrDetails,
+                `Placeholder signals found: ${placeholderHits}`,
+              ],
+            },
+            documentValidation: {
+              passed: false,
+              earned: 0,
+              total: 25,
+              details: ["Rejected: template/placeholder license"],
+            },
+          },
+        };
+      }
+
+      let docValidationEarned = 0;
+      const docDetails: string[] = [];
+
+      const licenseMatch = ocrText.match(LICENSE_NUMBER_PATTERN);
+      if (licenseMatch) {
+        docValidationEarned += 10;
+        docDetails.push(`Found license number: ${licenseMatch[1].trim()}`);
+      } else if (/\b[A-Z]{1,4}\d{4,10}\b/.test(ocrText.toUpperCase())) {
+        docValidationEarned += 4;
+        docDetails.push("Found license-number-like identifier");
+      }
+
+      const upper = ocrText.toUpperCase();
+      if (
+        /ESTHETICIAN|COSMETOLOGIST|COSMETOLOGY|BARBER|APPEARANCE ENHANCEMENT|NAIL|CE PROVIDER/.test(
+          upper
+        )
+      ) {
+        docValidationEarned += 8;
+        docDetails.push("Profession / license type identified");
+      }
+
+      const expiry = extractExpirationDate(ocrText);
+      docDetails.push(...expiry.details);
+
+      if (expiry.date && expiry.date.getTime() < Date.now()) {
+        return {
+          userStatus: "rejected",
+          trustScore: Math.max(
+            0,
+            Math.min(100, quality.earned + ocrEarned + docValidationEarned)
+          ),
+          message:
+            "Your document is expired. Please upload a currently valid professional license.",
+          errorFlags: [...errorFlags, `Expired on ${expiry.raw}`],
+          checks: {
+            imageQuality: {
+              passed: quality.earned >= quality.total * 0.5,
+              earned: quality.earned,
+              total: quality.total,
+              details: quality.details,
+            },
+            textDetection: {
+              passed: ocrEarned >= 20,
+              earned: Math.max(0, ocrEarned),
+              total: 45,
+              details: ocrDetails,
+            },
+            documentValidation: {
+              passed: false,
+              earned: Math.max(0, docValidationEarned),
+              total: 25,
+              details: docDetails,
+            },
+          },
+        };
+      }
+
+      if (expiry.date) {
+        docValidationEarned += 7;
+      }
+
+      const trustScore = Math.max(
+        0,
+        Math.min(100, quality.earned + ocrEarned + docValidationEarned)
+      );
+      const { userStatus, message } = scoreStatus(
+        trustScore,
+        "Professional license passed automated verification.",
+        "Professional license could not be fully verified automatically. It will require manual review.",
+        "Document could not be validated as an authentic professional license."
+      );
+
+      return {
+        userStatus,
+        trustScore,
+        message,
+        errorFlags,
+        checks: {
+          imageQuality: {
+            passed: quality.earned >= quality.total * 0.5,
+            earned: quality.earned,
+            total: quality.total,
+            details: quality.details,
+          },
+          textDetection: {
+            passed: ocrEarned >= 20,
+            earned: Math.max(0, ocrEarned),
+            total: 45,
+            details: ocrDetails,
+          },
+          documentValidation: {
+            passed: docValidationEarned >= 10,
+            earned: Math.max(0, docValidationEarned),
+            total: 25,
+            details: docDetails,
+          },
+        },
+      };
+    } finally {
+      for (const p of cleanupPaths) {
+        await fs.unlink(p).catch(() => {});
+      }
+    }
+  }
+
+  /**
+   * Business document verification for EIN (IRS CP 575) and LLC/formation certificates.
+   */
+  static async verifyBusinessDocument(
+    filePath: string
+  ): Promise<VerificationAnalysis> {
+    const errorFlags: string[] = [];
+    let cleanupPaths: string[] = [];
+
+    try {
+      const extracted = await getTextFromDocument(filePath);
+      cleanupPaths = extracted.cleanupPaths;
+      const quality = extracted.quality;
+      const ocrText = extracted.text;
+      const confidence = extracted.confidence;
+      const upper = ocrText.toUpperCase();
+
+      let ocrEarned = 0;
+      const ocrDetails: string[] = [];
+
+      if (ocrText.length > 0) {
+        ocrEarned += 10;
+        ocrDetails.push(
+          `Extracted ${ocrText.length} characters (${extracted.source}, confidence ${Math.round(confidence)}%)`
+        );
+      } else {
+        ocrDetails.push("No text extracted from document");
+      }
+
+      // Hard reject example/sample EIN letters immediately.
+      if (/EXAMPLE ONLY/.test(upper)) {
+        return {
+          userStatus: "rejected",
+          trustScore: Math.max(0, quality.earned),
+          message:
+            "This appears to be an example/sample IRS letter. Please upload your real EIN confirmation (CP 575) letter.",
+          errorFlags: ["Document contains EXAMPLE ONLY sample markers"],
+          checks: {
+            imageQuality: {
+              passed: quality.earned >= quality.total * 0.5,
+              earned: quality.earned,
+              total: quality.total,
+              details: quality.details,
+            },
+            textDetection: {
+              passed: false,
+              earned: 0,
+              total: 45,
+              details: ocrDetails.concat(["EXAMPLE ONLY marker found"]),
+            },
+            documentValidation: {
+              passed: false,
+              earned: 0,
+              total: 25,
+              details: ["Rejected: sample/example EIN letter"],
+            },
+          },
+        };
+      }
+
+      const einHits = countKeywordHits(ocrText, EIN_KEYWORDS);
+      const llcHits = countKeywordHits(ocrText, LLC_KEYWORDS);
+      const isEinLike = einHits >= 2 || /WE ASSIGNED YOU AN EMPLOYER IDENTIFICATION NUMBER/.test(upper);
+      const isLlcLike =
+        llcHits >= 2 ||
+        /CERTIFICATE OF FORMATION|ARTICLES OF ORGANIZATION|CERTIFICATE OF ORGANIZATION/.test(
+          upper
+        );
+
+      let docKind: "ein" | "llc" | "unknown" = "unknown";
+      if (isEinLike && (!isLlcLike || einHits >= llcHits)) {
+        docKind = "ein";
+      } else if (isLlcLike) {
+        docKind = "llc";
+      }
+
+      if (isEinLike && isLlcLike) {
+        ocrDetails.push(
+          `Mixed business signals detected (EIN indicators=${einHits}, LLC indicators=${llcHits})`
+        );
+      }
+
+      let docValidationEarned = 0;
+      const docDetails: string[] = [];
+
+      if (docKind === "ein" || (isEinLike && isLlcLike)) {
+        ocrEarned += Math.min(20, einHits * 4);
+        ocrDetails.push(`EIN/IRS indicators: ${einHits}`);
+
+        const fakeHits = countKeywordHits(ocrText, EIN_FAKE_SIGNALS);
+        if (fakeHits > 0) {
+          errorFlags.push("Document contains example/sample EIN indicators");
+          ocrEarned -= 25;
+          ocrDetails.push(`Fake/example signals: ${fakeHits}`);
+        }
+
+        const einMatch =
+          ocrText.match(EIN_NUMBER_PATTERN) ||
+          ocrText.match(EIN_NUMBER_LOOSE_PATTERN);
+        if (einMatch) {
+          docValidationEarned += 12;
+          docDetails.push(`Found EIN: ${einMatch[1].replace(/\s+/g, "")}`);
+        } else {
+          docDetails.push("No EIN number pattern found");
+        }
+
+        if (/CP\s*575/.test(upper) || /FORM[:\s]*SS-4/.test(upper)) {
+          docValidationEarned += 8;
+          docDetails.push("IRS CP 575 / SS-4 form markers found");
+        }
+      }
+
+      if (docKind === "llc" || (isLlcLike && !isEinLike)) {
+        ocrEarned += Math.min(20, llcHits * 3);
+        ocrDetails.push(`LLC/formation indicators: ${llcHits}`);
+
+        const rejectHits = countKeywordHits(ocrText, LLC_REJECT_SIGNALS);
+        if (rejectHits > 0 || /HAS NOT BEEN FILED/.test(upper)) {
+          return {
+            userStatus: "rejected",
+            trustScore: Math.max(0, quality.earned + Math.max(0, ocrEarned)),
+            message:
+              "This document indicates the business filing was not completed or was returned. Please upload an approved Certificate of Formation / Articles of Organization or IRS EIN letter.",
+            errorFlags: [
+              ...errorFlags,
+              "Filing rejection / return language found",
+            ],
+            checks: {
+              imageQuality: {
+                passed: quality.earned >= quality.total * 0.5,
+                earned: quality.earned,
+                total: quality.total,
+                details: quality.details,
+              },
+              textDetection: {
+                passed: ocrEarned >= 20,
+                earned: Math.max(0, ocrEarned),
+                total: 45,
+                details: ocrDetails,
+              },
+              documentValidation: {
+                passed: false,
+                earned: 0,
+                total: 25,
+                details: ["Rejected: document is a return/not-filed notice"],
+              },
+            },
+          };
+        }
+
+        if (
+          /CERTIFICATE OF FORMATION|ARTICLES OF ORGANIZATION|CERTIFICATE OF ORGANIZATION/.test(
+            upper
+          )
+        ) {
+          docValidationEarned += 10;
+          docDetails.push("Formation / organization certificate title found");
+        }
+        if (/LIMITED LIABILITY COMPANY|\bLLC\b/.test(upper)) {
+          docValidationEarned += 6;
+          docDetails.push("LLC entity type found");
+        }
+        if (
+          /SECRETARY OF STATE|DIVISION OF CORPORATIONS|CORPORATIONS DIVISION|DEPARTMENT OF STATE/.test(
+            upper
+          )
+        ) {
+          docValidationEarned += 6;
+          docDetails.push("State filing authority found");
+        }
+        if (
+          /FILE\s*(?:NUMBER|NO)|FILING\s*NUMBER|CONTROL\s*NUMBER|DOCUMENT\s*(?:NUMBER|#)|SR#|ENTITY ID/i.test(
+            ocrText
+          )
+        ) {
+          docValidationEarned += 3;
+          docDetails.push("Filing / control number marker found");
+        }
+      }
+
+      if (docKind === "unknown") {
+        ocrDetails.push("Could not classify as EIN letter or LLC formation document");
+        return {
+          userStatus: "rejected",
+          trustScore: Math.max(0, quality.earned + Math.max(0, ocrEarned)),
+          message:
+            "This document does not appear to be an IRS EIN confirmation letter or LLC Certificate of Formation. Please upload one of those documents.",
+          errorFlags: ["Unrecognized business document type"],
+          checks: {
+            imageQuality: {
+              passed: quality.earned >= quality.total * 0.5,
+              earned: quality.earned,
+              total: quality.total,
+              details: quality.details,
+            },
+            textDetection: {
+              passed: false,
+              earned: Math.max(0, ocrEarned),
+              total: 45,
+              details: ocrDetails,
+            },
+            documentValidation: {
+              passed: false,
+              earned: 0,
+              total: 25,
+              details: ["Rejected: not an EIN letter or LLC formation certificate"],
+            },
+          },
+        };
+      }
+
+      if (docKind === "ein" && isLlcLike) {
+        if (
+          /CERTIFICATE OF FORMATION|ARTICLES OF ORGANIZATION|CERTIFICATE OF ORGANIZATION/.test(
+            upper
+          )
+        ) {
+          docValidationEarned += 4;
+          docDetails.push("Also contains formation certificate content");
+        }
+      }
+
+      const trustScore = Math.max(
+        0,
+        Math.min(100, quality.earned + ocrEarned + docValidationEarned)
+      );
+      const { userStatus, message } = scoreStatus(
+        trustScore,
+        "Business document passed automated verification.",
+        "Business document could not be fully verified automatically. It will require manual review.",
+        "Document could not be validated as an authentic IRS EIN letter or LLC formation certificate."
+      );
+
+      return {
+        userStatus,
+        trustScore,
+        message,
+        errorFlags,
+        checks: {
+          imageQuality: {
+            passed: quality.earned >= quality.total * 0.5,
+            earned: quality.earned,
+            total: quality.total,
+            details: quality.details,
+          },
+          textDetection: {
+            passed: ocrEarned >= 20,
+            earned: Math.max(0, ocrEarned),
+            total: 45,
+            details: ocrDetails,
+          },
+          documentValidation: {
+            passed: docValidationEarned >= 10,
+            earned: Math.max(0, docValidationEarned),
+            total: 25,
+            details: docDetails,
+          },
+        },
+      };
+    } finally {
+      for (const p of cleanupPaths) {
+        await fs.unlink(p).catch(() => {});
+      }
+    }
+  }
+
+  static async verifyProfessionalLicenseAtPath(
+    relativePath: string
+  ): Promise<VerificationAnalysis | null> {
+    const fullPath = path.join(process.cwd(), "uploads", relativePath);
+    try {
+      await fs.access(fullPath);
+    } catch {
+      return null;
+    }
+    return this.verifyProfessionalLicense(fullPath);
+  }
+
+  static async verifyBusinessDocumentAtPath(
+    relativePath: string
+  ): Promise<VerificationAnalysis | null> {
+    const fullPath = path.join(process.cwd(), "uploads", relativePath);
+    try {
+      await fs.access(fullPath);
+    } catch {
+      return null;
+    }
+    return this.verifyBusinessDocument(fullPath);
   }
 }

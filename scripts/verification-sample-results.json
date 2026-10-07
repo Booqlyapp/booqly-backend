@@ -1,0 +1,298 @@
+[
+  {
+    "label": "professional",
+    "name": "08974C60-785B-4995-B725-921304253A6B (1).png",
+    "kind": "professional",
+    "status": "verified",
+    "score": 50,
+    "message": "Professional license passed automated verification.",
+    "errorFlags": [],
+    "ms": 2468
+  },
+  {
+    "label": "professional",
+    "name": "172E0628-2877-4EA9-AFE4-C77F5B893240 (1).png",
+    "kind": "professional",
+    "status": "rejected",
+    "score": 78,
+    "message": "Your document is expired. Please upload a currently valid professional license.",
+    "errorFlags": [
+      "Expired on 08/31/2023"
+    ],
+    "ms": 1361
+  },
+  {
+    "label": "professional",
+    "name": "1B1A5F3C-EA5C-40ED-9864-0FE33C9834E9 (1).png",
+    "kind": "professional",
+    "status": "verified",
+    "score": 68,
+    "message": "Professional license passed automated verification.",
+    "errorFlags": [],
+    "ms": 2886
+  },
+  {
+    "label": "professional",
+    "name": "1DA2B515-6D65-4A5D-98E4-2EAE487ED92B (1).jpeg",
+    "kind": "professional",
+    "status": "rejected",
+    "score": 35,
+    "message": "This document does not appear to be a professional license. Please upload a clear photo of your state board / professional license.",
+    "errorFlags": [
+      "No professional license indicators found"
+    ],
+    "ms": 2711
+  },
+  {
+    "label": "professional",
+    "name": "1EA0BBC6-8093-4837-BDAB-8802B9A18E4C (1).jpeg",
+    "kind": "professional",
+    "status": "rejected",
+    "score": 32,
+    "message": "This looks like a blank or template license. Please upload your real, filled professional license.",
+    "errorFlags": [
+      "Document contains placeholder/template fields"
+    ],
+    "ms": 1271
+  },
+  {
+    "label": "professional",
+    "name": "75D40367-F3E8-4C62-AD01-8019A6D36C8A (1).png",
+    "kind": "professional",
+    "status": "verified",
+    "score": 78,
+    "message": "Professional license passed automated verification.",
+    "errorFlags": [],
+    "ms": 3387
+  },
+  {
+    "label": "professional",
+    "name": "AD944A12-9B0E-4123-9708-03C59AD369DE (1).jpeg",
+    "kind": "professional",
+    "status": "rejected",
+    "score": 78,
+    "message": "Your document is expired. Please upload a currently valid professional license.",
+    "errorFlags": [
+      "Expired on MAY 31, 2025"
+    ],
+    "ms": 3818
+  },
+  {
+    "label": "professional",
+    "name": "BB20263D-186B-4391-85FC-65EC695315A0 (1).jpeg",
+    "kind": "professional",
+    "status": "rejected",
+    "score": 35,
+    "message": "This document does not appear to be a professional license. Please upload a clear photo of your state board / professional license.",
+    "errorFlags": [
+      "No professional license indicators found"
+    ],
+    "ms": 1178
+  },
+  {
+    "label": "professional",
+    "name": "E1375FA9-064C-4052-9A06-1DDF0301D902 (1).jpeg",
+    "kind": "professional",
+    "status": "rejected",
+    "score": 72,
+    "message": "Your document is expired. Please upload a currently valid professional license.",
+    "errorFlags": [
+      "Expired on 06/30/2023"
+    ],
+    "ms": 1252
+  },
+  {
+    "label": "ein",
+    "name": "ein-confirmation-letter (2).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 75,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 617
+  },
+  {
+    "label": "ein",
+    "name": "IRSEINCorcoranConsultingLLC (1).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 75,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 596
+  },
+  {
+    "label": "ein",
+    "name": "Sample EIN Confirmation Letter (2).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 63,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 9978
+  },
+  {
+    "label": "ein",
+    "name": "Sample-EIN-for-MaCCRA-chapter-confirmation-letter (2).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 75,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 620
+  },
+  {
+    "label": "ein",
+    "name": "Sample-IRS-Letter (2).pdf",
+    "kind": "business",
+    "status": "rejected",
+    "score": 25,
+    "message": "This appears to be an example/sample IRS letter. Please upload your real EIN confirmation (CP 575) letter.",
+    "errorFlags": [
+      "Document contains EXAMPLE ONLY sample markers"
+    ],
+    "ms": 754
+  },
+  {
+    "label": "ein",
+    "name": "_B50FF448-D5A6-4BF4-8486-D9CB0EFFC9F5_ (2).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 75,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 594
+  },
+  {
+    "label": "llc",
+    "name": "certificateofformation (1).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 59,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 570
+  },
+  {
+    "label": "llc",
+    "name": "certificateofformation 2 (1).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 72,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 688
+  },
+  {
+    "label": "llc",
+    "name": "Certificate_of_Formation.pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 59,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 846
+  },
+  {
+    "label": "llc",
+    "name": "certified-copy-example (1).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 66,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 686
+  },
+  {
+    "label": "llc",
+    "name": "ConvertTiffToPDF (1).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 57,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 11572
+  },
+  {
+    "label": "llc",
+    "name": "ConvertTiffToPDF 2 (1).pdf",
+    "kind": "business",
+    "status": "rejected",
+    "score": 47,
+    "message": "This document indicates the business filing was not completed or was returned. Please upload an approved Certificate of Formation / Articles of Organization or IRS EIN letter.",
+    "errorFlags": [
+      "Filing rejection / return language found"
+    ],
+    "ms": 16708
+  },
+  {
+    "label": "llc",
+    "name": "dcm111certificate_of_formation (1).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 60,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 600
+  },
+  {
+    "label": "llc",
+    "name": "FAA-2025-0513-0001_attachment_5 (1).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 79,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 667
+  },
+  {
+    "label": "llc",
+    "name": "kb_cert_of_org (1).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 47,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 916
+  },
+  {
+    "label": "llc",
+    "name": "Open folder File Provider Storage.jpeg (1).png",
+    "kind": "business",
+    "status": "verified",
+    "score": 78,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 3579
+  },
+  {
+    "label": "llc",
+    "name": "spv_certificate (1).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 59,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 801
+  },
+  {
+    "label": "llc",
+    "name": "topaz-exhibit-c-international-securities-exchange-llc-certificate-of-formation (1).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 53,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 649
+  },
+  {
+    "label": "llc",
+    "name": "txse-form-1-exhibit-c-10 (2).pdf",
+    "kind": "business",
+    "status": "verified",
+    "score": 69,
+    "message": "Business document passed automated verification.",
+    "errorFlags": [],
+    "ms": 591
+  }
+]

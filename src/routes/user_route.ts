@@ -71,34 +71,38 @@ router.post(
 // Remove profile picture (requires authentication)
 router.delete("/remove-profile-pic", authenticateToken, removeUserProfilePic);
 
-// Upload identity document (requires authentication)
+// Upload identity document (client / solo / suite team member — controller enforces)
 router.post(
   "/upload-identity-document",
   authenticateToken,
+  requireRole(["client", "solo", "suite"]),
   identityDocUpload.single("identityDocument"),
   uploadIdentityDocument
 );
 
-// Upload professional license document (solo, requires authentication)
+// Upload professional license (solo / suite team member — controller enforces)
 router.post(
   "/upload-professional-document",
   authenticateToken,
+  requireRole(["solo", "suite"]),
   professionalDocUpload.single("professionalDocument"),
   uploadProfessionalDocument
 );
 
-// Upload business document (solo/suite, requires authentication)
+// Upload business document (solo / suite owner — controller enforces)
 router.post(
   "/upload-business-document",
   authenticateToken,
+  requireRole(["solo", "suite"]),
   businessDocUpload.single("businessDocument"),
   uploadBusinessDocument
 );
 
-// Verify business via Google Business profile (suite, requires authentication)
+// Verify business via Google Business profile (suite owner — controller enforces)
 router.post(
   "/verify-business-google",
   authenticateToken,
+  requireRole(["suite"]),
   verifyBusinessGoogle
 );
 

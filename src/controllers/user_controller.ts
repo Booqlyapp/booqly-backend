@@ -871,6 +871,8 @@ export const removeUserProfilePic = async (
 
 /**
  * Upload identity document (government-issued ID)
+ * Allowed: client, solo provider, suite team member.
+ * Not allowed: suite owner (they verify via business / Google Business).
  */
 export const uploadIdentityDocument = async (
   req: AuthRequest,
@@ -894,6 +896,17 @@ export const uploadIdentityDocument = async (
     }
 
     const user = req.user;
+    const canUploadIdentity =
+      user.role === "client" ||
+      user.role === "solo" ||
+      (user.role === "suite" && user.isTeamMember === true);
+    if (!canUploadIdentity) {
+      return res.status(403).json({
+        status: false,
+        message:
+          "Government photo ID verification is only for clients, solo providers, and suite team members. Suite owners must verify with a business document or Google Business.",
+      });
+    }
 
     // Delete old identity document if exists
     if (user.identityDocumentUrl) {
@@ -1057,7 +1070,9 @@ async function verifyBusinessPdf(
 }
 
 /**
- * Upload a solo professional license document (e.g. nails, esthetics, waxing)
+ * Upload a professional license document (e.g. nails, esthetics, waxing)
+ * Allowed: solo provider, suite team member.
+ * Not allowed: client, suite owner.
  */
 export const uploadProfessionalDocument = async (
   req: AuthRequest,
@@ -1081,6 +1096,17 @@ export const uploadProfessionalDocument = async (
     }
 
     const user = req.user;
+    const canUploadLicense =
+      user.role === "solo" ||
+      (user.role === "suite" && user.isTeamMember === true);
+    if (!canUploadLicense) {
+      return res.status(403).json({
+        status: false,
+        message:
+          "Professional license upload is only for solo providers and suite team members.",
+      });
+    }
+
     const licenseType =
       typeof req.body.licenseType === "string" &&
       req.body.licenseType.trim() !== ""
@@ -1113,9 +1139,72 @@ export const uploadProfessionalDocument = async (
       professionalDocumentUrl: publicUrl,
       professionalLicenseType:
         licenseType ?? user.professionalLicenseType ?? null,
-      professionalVerified: true,
     });
 
+    let verificationAnalysis = null;
+    try {
+      verificationAnalysis =
+        await DocumentVerificationService.verifyProfessionalLicenseAtPath(
+          relativePath
+        );
+    } catch (verifyError) {
+      console.error("Professional license verification failed:", verifyError);
+    }
+
+    if (verificationAnalysis) {
+      const newStatus = verificationAnalysis.userStatus;
+      const approved = newStatus === "verified";
+      await user.update({
+        professionalVerified: approved,
+      });
+      await user.reload();
+      const isAccountVerified = Boolean(
+        user.identityVerified ||
+          user.professionalVerified ||
+          user.businessVerified
+      );
+      await user.update({
+        status: isAccountVerified ? "verified" : newStatus,
+        accountVerified: isAccountVerified,
+      });
+
+      if (approved) {
+        try {
+          const { NotificationService } = await import(
+            "../services/notification.service"
+          );
+          await NotificationService.createNotification({
+            userId: user.id,
+            type: "professional_verified",
+            title: "Professional Verified",
+            content:
+              "Congratulations! Your professional license has been verified. You are now a Booqly Verified Professional.",
+            data: { verificationStatus: "verified" },
+            channels: { push: true, in_app: true },
+          });
+        } catch (notifyError) {
+          console.error(
+            "Failed to send professional verification notification:",
+            notifyError
+          );
+        }
+      }
+
+      return res.status(200).json({
+        status: true,
+        message: "Professional license uploaded and processed successfully",
+        data: {
+          professionalDocumentUrl: publicUrl,
+          professionalVerified: approved,
+          professionalLicenseType: user.professionalLicenseType,
+          verificationStatus: newStatus,
+          trustScore: verificationAnalysis.trustScore,
+          verificationMessage: verificationAnalysis.message,
+        },
+      });
+    }
+
+    await user.reload();
     const isAccountVerified = Boolean(
       user.identityVerified || user.professionalVerified || user.businessVerified
     );
@@ -1124,31 +1213,13 @@ export const uploadProfessionalDocument = async (
       accountVerified: isAccountVerified,
     });
 
-    try {
-      const { NotificationService } = await import(
-        "../services/notification.service"
-      );
-      await NotificationService.createNotification({
-        userId: user.id,
-        type: "professional_verified",
-        title: "Professional Verified",
-        content:
-          "Congratulations! Your professional license has been verified. You are now a Booqly Verified Professional.",
-        data: { verificationStatus: "verified" },
-        channels: { push: true, in_app: true },
-      });
-    } catch (notifyError) {
-      console.error("Failed to send professional verification notification:", notifyError);
-    }
-
     return res.status(200).json({
       status: true,
-      message: "Professional license uploaded and verified successfully",
+      message: "Professional license uploaded successfully",
       data: {
         professionalDocumentUrl: publicUrl,
-        professionalVerified: true,
+        professionalVerified: user.professionalVerified,
         professionalLicenseType: user.professionalLicenseType,
-        verificationStatus: "verified",
       },
     });
   } catch (error) {
@@ -1161,7 +1232,9 @@ export const uploadProfessionalDocument = async (
 };
 
 /**
- * Upload a solo business document (EIN letter or LLC certificate, image or PDF)
+ * Upload a business document (EIN letter or LLC certificate, image or PDF)
+ * Allowed: solo provider, suite owner (not team member).
+ * Not allowed: client, suite team member.
  */
 export const uploadBusinessDocument = async (
   req: AuthRequest,
@@ -1185,6 +1258,16 @@ export const uploadBusinessDocument = async (
     }
 
     const user = req.user;
+    const canUploadBusiness =
+      user.role === "solo" ||
+      (user.role === "suite" && user.isTeamMember !== true);
+    if (!canUploadBusiness) {
+      return res.status(403).json({
+        status: false,
+        message:
+          "Business document upload is only for solo providers and suite owners.",
+      });
+    }
 
     const relativePath = `verification-docs/businessDoc/${file.filename}`;
     const absolutePath = path.join(process.cwd(), "uploads", relativePath);
@@ -1229,22 +1312,23 @@ export const uploadBusinessDocument = async (
     });
 
     let verificationAnalysis = null;
-    if (!isPdf) {
-      try {
-        verificationAnalysis = await DocumentVerificationService.verifyDocumentAtPath(
+    try {
+      verificationAnalysis =
+        await DocumentVerificationService.verifyBusinessDocumentAtPath(
           relativePath
         );
-      } catch (verifyError) {
-        console.error("Business document verification failed:", verifyError);
-      }
+    } catch (verifyError) {
+      console.error("Business document verification failed:", verifyError);
     }
 
-    let newStatus: "pending" | "verified" | "rejected" = "verified";
+    let newStatus: "pending" | "verified" | "rejected" = "pending";
     let trustScore: number | null = null;
+    let verificationMessage: string | undefined;
 
     if (verificationAnalysis) {
       newStatus = verificationAnalysis.userStatus;
       trustScore = verificationAnalysis.trustScore;
+      verificationMessage = verificationAnalysis.message;
     }
 
     const businessApproved = newStatus === "verified";
@@ -1252,6 +1336,7 @@ export const uploadBusinessDocument = async (
     await user.update({
       businessVerified: businessApproved,
     });
+    await user.reload();
 
     const isAccountVerified = Boolean(
       user.identityVerified || user.professionalVerified || user.businessVerified
@@ -1288,11 +1373,7 @@ export const uploadBusinessDocument = async (
         businessVerified: businessApproved,
         verificationStatus: newStatus,
         trustScore,
-        verificationMessage:
-          verificationAnalysis?.message ??
-          (newStatus === "verified"
-            ? "Business document passed automated verification."
-            : undefined),
+        verificationMessage,
       },
     });
   } catch (error) {
@@ -1323,6 +1404,14 @@ export const verifyBusinessGoogle = async (
     }
 
     const user = req.user;
+    if (user.role !== "suite" || user.isTeamMember === true) {
+      return res.status(403).json({
+        status: false,
+        message:
+          "Google Business verification is only available for suite owners.",
+      });
+    }
+
     const googlePlaceId =
       typeof req.body.googlePlaceId === "string"
         ? req.body.googlePlaceId.trim()

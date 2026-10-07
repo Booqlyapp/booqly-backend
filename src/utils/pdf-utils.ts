@@ -67,14 +67,20 @@ export async function extractPdfText(pdfPath: string): Promise<string> {
 }
 
 /**
- * Render the first page of a PDF to a PNG file.
+ * Render a PDF page (1-based) to a PNG file.
  * Returns the rendered dimensions, or null on failure.
  */
-export async function renderPdfFirstPageToPng(
+export async function renderPdfPageToPng(
   pdfPath: string,
-  outPngPath: string
+  outPngPath: string,
+  pageNumber: number = 1
 ): Promise<{ width: number; height: number } | null> {
-  const result = await runPdfWorker(["render", pdfPath, outPngPath]);
+  const result = await runPdfWorker([
+    "render",
+    pdfPath,
+    outPngPath,
+    String(pageNumber),
+  ]);
   if (
     result &&
     result.ok === true &&
@@ -85,4 +91,15 @@ export async function renderPdfFirstPageToPng(
     return { width: result.width, height: result.height };
   }
   return null;
+}
+
+/**
+ * Render the first page of a PDF to a PNG file.
+ * Returns the rendered dimensions, or null on failure.
+ */
+export async function renderPdfFirstPageToPng(
+  pdfPath: string,
+  outPngPath: string
+): Promise<{ width: number; height: number } | null> {
+  return renderPdfPageToPng(pdfPath, outPngPath, 1);
 }

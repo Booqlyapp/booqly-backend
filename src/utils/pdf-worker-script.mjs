@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { createCanvas } from "@napi-rs/canvas";
 
-const [mode, inFile, outFile] = process.argv.slice(2);
+const [mode, inFile, outFile, pageArg] = process.argv.slice(2);
 
 if (!inFile || !fs.existsSync(inFile)) {
   console.log(JSON.stringify({ ok: false, error: "PDF file not found" }));
@@ -40,7 +40,17 @@ try {
       console.log(JSON.stringify({ ok: false, error: "No output path given" }));
       process.exit(0);
     }
-    const page = await doc.getPage(1);
+    const pageNumber = Math.max(1, parseInt(pageArg || "1", 10) || 1);
+    if (pageNumber > doc.numPages) {
+      console.log(
+        JSON.stringify({
+          ok: false,
+          error: `Page ${pageNumber} out of range (${doc.numPages} pages)`,
+        })
+      );
+      process.exit(0);
+    }
+    const page = await doc.getPage(pageNumber);
     const baseViewport = page.getViewport({ scale: 1 });
     const scale = Math.max(1, 1200 / baseViewport.width);
     const viewport = page.getViewport({ scale });
@@ -57,6 +67,7 @@ try {
         ok: true,
         width: Math.round(viewport.width),
         height: Math.round(viewport.height),
+        page: pageNumber,
       })
     );
   } else {
