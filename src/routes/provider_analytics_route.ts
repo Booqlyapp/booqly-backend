@@ -1,49 +1,88 @@
-import express from 'express';
+import express from "express";
 import {
   getProviderAnalytics,
   getAnalyticsOverview,
   getEarningsSummary,
   checkAnalyticsAccess,
   getDashboardSummary,
-} from '../controllers/provider_analytics.controller';
-import { authenticateToken } from '../middlewares/auth.middleware';
+  getPayoutHistory,
+  getMetricDrilldown,
+  getTeamMemberAnalyticsDetail,
+  updateMonthlyRevenueGoal,
+  getAnalyticsFilterOptions,
+} from "../controllers/provider_analytics.controller";
+import { authenticateToken, requireRole } from "../middlewares/auth.middleware";
 
 const router = express.Router();
 
-/**
- * @route   GET /provider-analytics/access
- * @desc    Check analytics access level
- * @access  Private (Solo/Suite providers)
- */
-router.get('/access', authenticateToken, checkAnalyticsAccess);
+router.get(
+  "/access",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  checkAnalyticsAccess
+);
 
-/**
- * @route   GET /provider-analytics/:marketplaceId/dashboard
- * @desc    Get dashboard summary (earnings, upcoming, top service, booking stats, revenue by service)
- * @access  Private (All providers)
- */
-router.get('/:marketplaceId/dashboard', authenticateToken, getDashboardSummary);
+router.get(
+  "/:marketplaceId/filters",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  getAnalyticsFilterOptions
+);
 
-/**
- * @route   GET /provider-analytics/:marketplaceId
- * @desc    Get provider analytics (Basic or Advanced based on subscription)
- * @access  Private (Solo Pro/Premium, Suite owners)
- * @query   startDate, endDate (optional)
- */
-router.get('/:marketplaceId', authenticateToken, getProviderAnalytics);
+router.get(
+  "/:marketplaceId/team/:teamMemberId",
+  authenticateToken,
+  requireRole(["suite"]),
+  getTeamMemberAnalyticsDetail
+);
 
-/**
- * @route   GET /provider-analytics/:marketplaceId/overview
- * @desc    Get analytics overview (summary stats)
- * @access  Private (Solo Pro/Premium, Suite owners)
- */
-router.get('/:marketplaceId/overview', authenticateToken, getAnalyticsOverview);
+router.get(
+  "/:marketplaceId/dashboard",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  getDashboardSummary
+);
 
-/**
- * @route   GET /provider-analytics/:marketplaceId/earnings
- * @desc    Get earnings summary (today, this week, this month)
- * @access  Private (Solo Pro/Premium, Suite owners)
- */
-router.get('/:marketplaceId/earnings', authenticateToken, getEarningsSummary);
+router.get(
+  "/:marketplaceId/overview",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  getAnalyticsOverview
+);
+
+router.get(
+  "/:marketplaceId/earnings",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  getEarningsSummary
+);
+
+router.get(
+  "/:marketplaceId/payouts",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  getPayoutHistory
+);
+
+router.get(
+  "/:marketplaceId/drilldown",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  getMetricDrilldown
+);
+
+router.put(
+  "/:marketplaceId/revenue-goal",
+  authenticateToken,
+  requireRole(["suite"]),
+  updateMonthlyRevenueGoal
+);
+
+router.get(
+  "/:marketplaceId",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  getProviderAnalytics
+);
 
 export default router;

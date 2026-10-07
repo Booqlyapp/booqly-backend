@@ -28,6 +28,8 @@ interface MarketplaceAttributes {
   bookingPageHeaderPdf: string | null;
   waitlistEnabled: boolean;
   waitlistClaimWindowMinutes: number;
+  /** Suite Owner analytics: optional monthly revenue goal (PRD). */
+  monthlyRevenueGoal: number | null;
   scheduleId: string | null;
   userId: string | null;
   createdAt: CreationOptional<Date>;
@@ -61,6 +63,7 @@ export class Marketplace
   declare bookingPageHeaderPdf: string | null;
   declare waitlistEnabled: CreationOptional<boolean>;
   declare waitlistClaimWindowMinutes: CreationOptional<number>;
+  declare monthlyRevenueGoal: CreationOptional<number | null>;
   declare scheduleId: string | null;
   declare userId: string | null;
   declare createdAt: CreationOptional<Date>;
@@ -172,6 +175,11 @@ export default function initMarketplace(sequelize: Sequelize) {
           min: 15,
           max: 30,
         },
+      },
+      monthlyRevenueGoal: {
+        type: DataTypes.DECIMAL(12, 2),
+        allowNull: true,
+        defaultValue: null,
       },
       scheduleId: {
         type: DataTypes.UUID,
