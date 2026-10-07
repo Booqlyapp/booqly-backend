@@ -678,21 +678,12 @@ export const deleteService = async (
       });
     }
 
-    // Soft delete the service by setting deletedAt timestamp
-    const [updatedCount] = await Service.update(
-      { deletedAt: new Date() },
-      {
-        where: { id: serviceId, deletedAt: null },
-        returning: true,
-      }
-    );
-
-    if (updatedCount === 0) {
-      return res.status(404).json({
-        status: false,
-        message: "Service not found or already deleted.",
-      });
-    }
+    // Hard delete add-ons, then the service row
+    await ServiceAddOn.destroy({
+      where: { serviceId },
+      force: true,
+    });
+    await service.destroy({ force: true });
 
     return res.status(200).json({
       status: true,
