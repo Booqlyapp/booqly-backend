@@ -26,6 +26,8 @@ export interface AnalyticsFilters {
   serviceId?: string | null;
   /** completed | cancelled | no_show — maps to availed | canceled | no_show */
   bookingStatus?: "completed" | "cancelled" | "no_show" | null;
+  /** When set, limits rows to these statuses. Empty means no status filter. */
+  bookingStatuses?: Array<"completed" | "cancelled" | "no_show"> | null;
 }
 
 export interface BasicAnalytics {
@@ -104,7 +106,7 @@ function buildAppointmentWhere(
   marketplaceId: string,
   filters: AnalyticsFilters
 ): Record<string, unknown> {
-  const { dateRange, teamMemberId, serviceId, bookingStatus } = filters;
+  const { dateRange, teamMemberId, serviceId, bookingStatus, bookingStatuses } = filters;
   const where: Record<string, unknown> = {
     marketplaceId,
     dateTime: {
@@ -122,8 +124,18 @@ function buildAppointmentWhere(
     where.serviceId = serviceId;
   }
 
-  const status = statusWhere(bookingStatus);
-  if (status) Object.assign(where, status);
+  if (bookingStatuses && bookingStatuses.length > 0) {
+    where.status = {
+      [Op.in]: bookingStatuses.map((status) => {
+        if (status === "completed") return COMPLETED;
+        if (status === "cancelled") return "canceled";
+        return "no_show";
+      }),
+    };
+  } else {
+    const status = statusWhere(bookingStatus);
+    if (status) Object.assign(where, status);
+  }
 
   return where;
 }
@@ -166,6 +178,7 @@ export class ProviderAnalyticsService {
       assignedTeamMemberId?: string | null;
       serviceId?: string;
       bookingStatus?: AnalyticsFilters["bookingStatus"];
+      bookingStatuses?: AnalyticsFilters["bookingStatuses"];
     }
   ): Promise<BasicAnalytics> {
     const filters: AnalyticsFilters = {
@@ -177,6 +190,7 @@ export class ProviderAnalyticsService {
       teamMemberId: options?.assignedTeamMemberId ?? undefined,
       serviceId: options?.serviceId,
       bookingStatus: options?.bookingStatus,
+      bookingStatuses: options?.bookingStatuses,
     };
 
     const appointments = await Appointment.findAll({
@@ -263,6 +277,7 @@ export class ProviderAnalyticsService {
       assignedTeamMemberId?: string | null;
       serviceId?: string;
       bookingStatus?: AnalyticsFilters["bookingStatus"];
+      bookingStatuses?: AnalyticsFilters["bookingStatuses"];
     }
   ): Promise<AdvancedAnalytics> {
     const filters: AnalyticsFilters = {
@@ -277,6 +292,7 @@ export class ProviderAnalyticsService {
       teamMemberId: options?.assignedTeamMemberId ?? undefined,
       serviceId: options?.serviceId,
       bookingStatus: options?.bookingStatus,
+      bookingStatuses: options?.bookingStatuses,
     };
 
     const basicAnalytics = await this.getBasicAnalytics(
@@ -343,6 +359,128 @@ export class ProviderAnalyticsService {
     ]);
 
     return { today: t, thisWeek: w, thisMonth: m, todayCompletedCount };
+  }
+
+  static async compareCompletedRevenue(
+    marketplaceId: string,
+    range: AnalyticsDateRange,
+    assignedTeamMemberId?: string
+  ): Promise<{ current: number; previous: number; changePercent: number | null }> {
+    const current = await this.sumCompletedRevenue(
+      marketplaceId,
+      range,
+      assignedTeamMemberId
+    );
+    const previous = await this.sumCompletedRevenue(
+      marketplaceId,
+      previousPeriodRange(range),
+      assignedTeamMemberId
+    );
+    const changePercent =
+      previous === 0 ? null : ((current - previous) / previous) * 100;
+    return { current, previous, changePercent };
+  }
+
+  static async getProClients(
+    marketplaceId: string,
+    dateRange: AnalyticsDateRange,
+    serviceId?: string | null
+  ): Promise<{
+    clients: Array<Record<string, unknown>>;
+    staleClientIds: string[];
+  }> {
+    const periodWhere: any = {
+      marketplaceId,
+      dateTime: { [Op.between]: [dateRange.startDate, dateRange.endDate] },
+    };
+    if (serviceId) periodWhere.serviceId = serviceId;
+
+    const periodRows = await Appointment.findAll({
+      where: periodWhere,
+      include: [{ model: User, as: "user", attributes: ["id", "name"] }],
+      order: [["dateTime", "DESC"]],
+    });
+
+    const serviceIds = Array.from(
+      new Set(periodRows.map((row) => row.serviceId).filter(Boolean))
+    );
+    const services =
+      serviceIds.length > 0
+        ? ((await Service.findAll({
+            where: { id: { [Op.in]: serviceIds } },
+            attributes: ["id", "name"],
+            raw: true,
+          })) as any[])
+        : [];
+    const serviceMap = new Map(services.map((service) => [service.id, service.name]));
+
+    const clientIds = Array.from(new Set(periodRows.map((row) => row.userId).filter(Boolean)));
+    const lifetimeRows =
+      clientIds.length === 0
+        ? []
+        : await Appointment.findAll({
+            where: { marketplaceId, userId: { [Op.in]: clientIds } },
+            attributes: ["userId", "status", "dateTime", "price", "serviceId"],
+            raw: true,
+          });
+
+    const lifetimeByClient = new Map<string, any[]>();
+    for (const row of lifetimeRows as any[]) {
+      const list = lifetimeByClient.get(row.userId) || [];
+      list.push(row);
+      lifetimeByClient.set(row.userId, list);
+    }
+
+    const clients = clientIds.map((userId) => {
+      const period = periodRows.filter((row) => row.userId === userId);
+      const lifetime = lifetimeByClient.get(userId) || [];
+      const completedLife = lifetime.filter((row) => row.status === COMPLETED);
+      const periodCompleted = period.filter((row) => row.status === COMPLETED);
+      const firstCompleted = completedLife
+        .map((row) => new Date(row.dateTime))
+        .sort((a, b) => a.getTime() - b.getTime())[0];
+      const lastCompleted = completedLife
+        .map((row) => new Date(row.dateTime))
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+      const sample = period[0] as any;
+      return {
+        userId,
+        name: sample?.user?.name || null,
+        clientSince: firstCompleted ? firstCompleted.toISOString() : null,
+        lifetimeVisits: completedLife.length,
+        periodVisits: periodCompleted.length,
+        periodSpend: periodCompleted.reduce((sum, row) => sum + Number(row.price || 0), 0),
+        lifetimeNoShows: lifetime.filter((row) => row.status === "no_show").length,
+        isReturning: completedLife.length > 1,
+        lastCompletedAt: lastCompleted ? lastCompleted.toISOString() : null,
+        history: period.slice(0, 8).map((row: any) => ({
+          dateTime: new Date(row.dateTime).toISOString(),
+          serviceId: row.serviceId || null,
+          serviceName: serviceMap.get(row.serviceId) || null,
+          amount: Number(row.price) || 0,
+          status: row.status,
+        })),
+      };
+    });
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 60);
+    const completedAll = (await Appointment.findAll({
+      where: { marketplaceId, status: COMPLETED },
+      attributes: ["userId", "dateTime"],
+      raw: true,
+    })) as any[];
+    const latest = new Map<string, Date>();
+    for (const row of completedAll) {
+      const when = new Date(row.dateTime);
+      const current = latest.get(row.userId);
+      if (!current || when > current) latest.set(row.userId, when);
+    }
+    const staleClientIds = Array.from(latest.entries())
+      .filter(([, when]) => when.getTime() < cutoff.getTime())
+      .map(([userId]) => userId);
+
+    return { clients, staleClientIds };
   }
 
   /**

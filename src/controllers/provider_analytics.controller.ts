@@ -6,6 +6,8 @@ import {
   getEarningsScope,
   getTeamMemberPermissionsForUser,
 } from "../utils/team_member_permission_helper";
+import { previousPeriodRange } from "../utils/analytics_date_range";
+import { previousPeriodRange } from "../utils/analytics_date_range";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -59,7 +61,22 @@ function parseFilters(req: AuthRequest) {
     bookingStatus = rawStatus;
   }
 
-  return { dateRange, teamMemberId, serviceId, bookingStatus };
+  const rawStatuses = (req.query.bookingStatuses as string | undefined) || "";
+  const bookingStatuses = rawStatuses
+    .split(",")
+    .map((status) => status.trim().toLowerCase())
+    .filter(
+      (status): status is "completed" | "cancelled" | "no_show" =>
+        status === "completed" || status === "cancelled" || status === "no_show"
+    );
+
+  return {
+    dateRange,
+    teamMemberId,
+    serviceId,
+    bookingStatus: bookingStatuses.length > 0 ? null : bookingStatus,
+    bookingStatuses: bookingStatuses.length > 0 ? bookingStatuses : null,
+  };
 }
 
 /**
@@ -237,6 +254,7 @@ export const getProviderAnalytics = async (
       assignedTeamMemberId: filters.teamMemberId,
       serviceId: filters.serviceId || undefined,
       bookingStatus: filters.bookingStatus,
+      bookingStatuses: filters.bookingStatuses,
     };
 
     const analytics = access.hasAdvanced
@@ -275,6 +293,15 @@ export const getProviderAnalytics = async (
         },
         earnings,
         payouts,
+        earningsComparison: access.hasAdvanced
+          ? null
+          : await ProviderAnalyticsService.compareCompletedRevenue(
+              marketplaceId,
+              filters.dateRange,
+              filters.teamMemberId && filters.teamMemberId !== "owner"
+                ? filters.teamMemberId
+                : undefined
+            ),
         restricted: access.hasAdvanced
           ? null
           : {
@@ -404,6 +431,66 @@ export const getBasicEarningsDetail = async (
     res.status(500).json({
       status: false,
       message: "Failed to fetch earnings detail",
+    });
+  }
+};
+
+export const getProClients = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    if (!req.userId) {
+      res.status(401).json({ status: false, message: "Authentication required" });
+      return;
+    }
+
+    const { marketplaceId } = req.params;
+    const marketplace = await resolveMarketplaceAccess(req, marketplaceId);
+    if (!marketplace) {
+      res.status(404).json({
+        status: false,
+        message: "Marketplace not found or access denied",
+      });
+      return;
+    }
+
+    const uid = accessUserId(req);
+    const access = await ProviderAnalyticsService.checkAnalyticsAccess(uid);
+    const isSuiteOwner =
+      req.user?.role === "suite" && req.user?.isTeamMember !== true;
+    if (!isSuiteOwner && !access.hasBasic && !access.hasAdvanced) {
+      res.status(403).json({
+        status: false,
+        message: "Client analytics require a Pro plan.",
+      });
+      return;
+    }
+
+    let filters;
+    try {
+      filters = parseFilters(req);
+    } catch (e: any) {
+      res.status(400).json({ status: false, message: e.message });
+      return;
+    }
+
+    const data = await ProviderAnalyticsService.getProClients(
+      marketplaceId,
+      filters.dateRange,
+      filters.serviceId
+    );
+
+    res.status(200).json({
+      status: true,
+      message: "Client analytics retrieved successfully",
+      data,
+    });
+  } catch (error) {
+    console.error("Error fetching client analytics:", error);
+    res.status(500).json({
+      status: false,
+      message: "Failed to fetch client analytics",
     });
   }
 };
