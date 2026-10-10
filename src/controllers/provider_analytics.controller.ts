@@ -291,15 +291,21 @@ export const getProviderAnalytics = async (
         },
         earnings,
         payouts,
-        earningsComparison: access.hasAdvanced
-          ? null
-          : await ProviderAnalyticsService.compareCompletedRevenue(
+        earningsComparison: await ProviderAnalyticsService.compareCompletedRevenue(
+          marketplaceId,
+          filters.dateRange,
+          filters.teamMemberId && filters.teamMemberId !== "owner"
+            ? filters.teamMemberId
+            : undefined
+        ),
+        monthlyTrend: access.hasAdvanced
+          ? await ProviderAnalyticsService.getMonthlyTrend(
               marketplaceId,
-              filters.dateRange,
               filters.teamMemberId && filters.teamMemberId !== "owner"
                 ? filters.teamMemberId
                 : undefined
-            ),
+            )
+          : null,
         restricted: access.hasAdvanced
           ? null
           : {
@@ -430,6 +436,56 @@ export const getBasicEarningsDetail = async (
       status: false,
       message: "Failed to fetch earnings detail",
     });
+  }
+};
+
+export const getServiceInsight = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    if (!req.userId) {
+      res.status(401).json({ status: false, message: "Authentication required" });
+      return;
+    }
+    const { marketplaceId, serviceId } = req.params;
+    const marketplace = await resolveMarketplaceAccess(req, marketplaceId);
+    if (!marketplace) {
+      res.status(404).json({ status: false, message: "Marketplace not found or access denied" });
+      return;
+    }
+    const uid = accessUserId(req);
+    const access = await ProviderAnalyticsService.checkAnalyticsAccess(uid);
+    if (!access.hasAdvanced) {
+      res.status(403).json({
+        status: false,
+        message: "Service insights require Premium.",
+      });
+      return;
+    }
+    let filters;
+    try {
+      filters = parseFilters(req);
+    } catch (e: any) {
+      res.status(400).json({ status: false, message: e.message });
+      return;
+    }
+    const insight = await ProviderAnalyticsService.getServiceInsight(
+      marketplaceId,
+      serviceId,
+      filters.dateRange,
+      filters.teamMemberId && filters.teamMemberId !== "owner"
+        ? filters.teamMemberId
+        : undefined
+    );
+    if (!insight) {
+      res.status(404).json({ status: false, message: "Service not found" });
+      return;
+    }
+    res.status(200).json({ status: true, message: "Service insight retrieved", data: insight });
+  } catch (error) {
+    console.error("Error fetching service insight:", error);
+    res.status(500).json({ status: false, message: "Failed to fetch service insight" });
   }
 };
 

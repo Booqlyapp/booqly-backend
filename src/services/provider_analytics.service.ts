@@ -302,6 +302,7 @@ export class ProviderAnalyticsService {
         assignedTeamMemberId: options?.assignedTeamMemberId,
         serviceId: options?.serviceId,
         bookingStatus: options?.bookingStatus,
+        bookingStatuses: options?.bookingStatuses,
       }
     );
 
@@ -1394,15 +1395,157 @@ export class ProviderAnalyticsService {
       ...filters,
       bookingStatus: "completed",
     });
-    return rows
-      .sort((a, b) => b.bookings - a.bookings)
-      .slice(0, limit)
-      .map(({ serviceId, serviceName, bookings, revenue }) => ({
-        serviceId,
-        serviceName,
-        bookings,
-        revenue,
-      }));
+    const top = rows.sort((a, b) => b.bookings - a.bookings).slice(0, limit);
+    const detailed = [];
+    for (const row of top) {
+      const periodClients = (await Appointment.findAll({
+        where: {
+          marketplaceId,
+          serviceId: row.serviceId,
+          status: COMPLETED,
+          dateTime: {
+            [Op.between]: [filters.dateRange.startDate, filters.dateRange.endDate],
+          },
+        },
+        attributes: ["userId"],
+        raw: true,
+      })) as any[];
+      const clientIds = Array.from(
+        new Set(periodClients.map((item) => item.userId).filter(Boolean))
+      );
+      let returningRate = 0;
+      if (clientIds.length > 0) {
+        const counts = (await Appointment.findAll({
+          where: {
+            marketplaceId,
+            userId: { [Op.in]: clientIds },
+            status: COMPLETED,
+          },
+          attributes: ["userId", [Sequelize.fn("COUNT", Sequelize.col("id")), "cnt"]],
+          group: ["userId"],
+          raw: true,
+        })) as any[];
+        const returning = counts.filter((item) => parseInt(item.cnt || "0", 10) > 1).length;
+        returningRate = (returning / clientIds.length) * 100;
+      }
+      detailed.push({ ...row, returningRate });
+    }
+    return detailed;
+  }
+
+  static async getMonthlyTrend(
+    marketplaceId: string,
+    assignedTeamMemberId?: string,
+    months = 6
+  ): Promise<Array<{ month: string; revenue: number; bookings: number }>> {
+    const today = new Date();
+    const rows = [];
+    for (let index = months - 1; index >= 0; index -= 1) {
+      const start = new Date(today.getFullYear(), today.getMonth() - index, 1, 0, 0, 0, 0);
+      const end = new Date(today.getFullYear(), today.getMonth() - index + 1, 0, 23, 59, 59, 999);
+      const range = { startDate: start, endDate: end, preset: "month" as const };
+      const [revenue, bookings] = await Promise.all([
+        this.sumCompletedRevenue(marketplaceId, range, assignedTeamMemberId),
+        this.countCompletedAppointments(marketplaceId, range, assignedTeamMemberId),
+      ]);
+      const month = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01`;
+      rows.push({ month, revenue, bookings });
+    }
+    return rows;
+  }
+
+  static async getServiceInsight(
+    marketplaceId: string,
+    serviceId: string,
+    dateRange: AnalyticsDateRange,
+    assignedTeamMemberId?: string
+  ) {
+    const service = await Service.findByPk(serviceId, {
+      attributes: ["id", "name", "price", "duration"],
+    });
+    if (!service) return null;
+
+    const where: any = {
+      marketplaceId,
+      serviceId,
+      status: COMPLETED,
+      dateTime: { [Op.between]: [dateRange.startDate, dateRange.endDate] },
+    };
+    if (assignedTeamMemberId) where.assignedTeamMemberId = assignedTeamMemberId;
+
+    const periodRows = (await Appointment.findAll({
+      where,
+      attributes: ["userId", "price", "dateTime"],
+      raw: true,
+    })) as any[];
+    const revenue = periodRows.reduce((sum, row) => sum + Number(row.price || 0), 0);
+    const bookings = periodRows.length;
+    const clientIds = Array.from(new Set(periodRows.map((row) => row.userId).filter(Boolean)));
+
+    const previous = previousPeriodRange(dateRange);
+    const previousWhere = {
+      ...where,
+      dateTime: { [Op.between]: [previous.startDate, previous.endDate] },
+    };
+    const previousBookings = await Appointment.count({ where: previousWhere });
+
+    let returningClients = 0;
+    const oneTimeClientIds: string[] = [];
+    if (clientIds.length > 0) {
+      const counts = (await Appointment.findAll({
+        where: {
+          marketplaceId,
+          userId: { [Op.in]: clientIds },
+          status: COMPLETED,
+        },
+        attributes: ["userId", [Sequelize.fn("COUNT", Sequelize.col("id")), "cnt"]],
+        group: ["userId"],
+        raw: true,
+      })) as any[];
+      for (const row of counts) {
+        const count = parseInt(row.cnt || "0", 10);
+        if (count > 1) returningClients += 1;
+        if (count === 1) oneTimeClientIds.push(row.userId);
+      }
+    }
+
+    const totalRevenue = await this.sumCompletedRevenue(
+      marketplaceId,
+      dateRange,
+      assignedTeamMemberId
+    );
+
+    const months = [];
+    const end = dateRange.endDate;
+    for (let index = 5; index >= 0; index -= 1) {
+      const start = new Date(end.getFullYear(), end.getMonth() - index, 1, 0, 0, 0, 0);
+      const monthEnd = new Date(end.getFullYear(), end.getMonth() - index + 1, 0, 23, 59, 59, 999);
+      const monthWhere = {
+        ...where,
+        dateTime: { [Op.between]: [start, monthEnd] },
+      };
+      const count = await Appointment.count({ where: monthWhere });
+      months.push({
+        month: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01`,
+        bookings: count,
+      });
+    }
+
+    return {
+      serviceId: service.id,
+      serviceName: service.name,
+      price: Number(service.price) || 0,
+      duration: service.duration,
+      revenue,
+      bookings,
+      previousBookings,
+      revenueShare: totalRevenue === 0 ? 0 : (revenue / totalRevenue) * 100,
+      clientCount: clientIds.length,
+      returningClients,
+      returningRate: clientIds.length === 0 ? 0 : (returningClients / clientIds.length) * 100,
+      oneTimeClientIds,
+      months,
+    };
   }
 
   /**
