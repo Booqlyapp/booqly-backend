@@ -6,8 +6,6 @@ import {
   getEarningsScope,
   getTeamMemberPermissionsForUser,
 } from "../utils/team_member_permission_helper";
-import { previousPeriodRange } from "../utils/analytics_date_range";
-import { previousPeriodRange } from "../utils/analytics_date_range";
 
 interface AuthRequest extends Request {
   user?: any;
