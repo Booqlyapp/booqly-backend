@@ -351,6 +351,63 @@ export const getEarningsSummary = async (
   }
 };
 
+export const getBasicEarningsDetail = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    if (!req.userId) {
+      res.status(401).json({ status: false, message: "Authentication required" });
+      return;
+    }
+
+    const { marketplaceId } = req.params;
+    const marketplace = await resolveMarketplaceAccess(req, marketplaceId);
+    if (!marketplace) {
+      res.status(404).json({
+        status: false,
+        message: "Marketplace not found or access denied",
+      });
+      return;
+    }
+
+    let assignedTeamMemberId: string | undefined;
+    if (req.user?.isTeamMember) {
+      const permissions = await getTeamMemberPermissionsForUser(req.user);
+      const scope = getEarningsScope(permissions);
+      if (scope === "none") {
+        res.status(403).json({
+          status: false,
+          message: "You do not have permission to view earnings.",
+        });
+        return;
+      }
+      if (scope === "limited") {
+        assignedTeamMemberId = req.userId;
+      }
+    }
+
+    const weekStart =
+      typeof req.query.weekStart === "string" ? req.query.weekStart : undefined;
+    const data = await ProviderAnalyticsService.getBasicEarningsDetail(
+      marketplaceId,
+      { assignedTeamMemberId, weekStart }
+    );
+
+    res.status(200).json({
+      status: true,
+      message: "Earnings detail retrieved successfully",
+      data,
+    });
+  } catch (error) {
+    console.error("Error fetching earnings detail:", error);
+    res.status(500).json({
+      status: false,
+      message: "Failed to fetch earnings detail",
+    });
+  }
+};
+
 export const getPayoutHistory = async (
   req: AuthRequest,
   res: Response

@@ -3,6 +3,7 @@ import {
   getProviderAnalytics,
   getAnalyticsOverview,
   getEarningsSummary,
+  getBasicEarningsDetail,
   checkAnalyticsAccess,
   getDashboardSummary,
   getPayoutHistory,
@@ -55,6 +56,13 @@ router.get(
   authenticateToken,
   requireRole(["solo", "suite"]),
   getEarningsSummary
+);
+
+router.get(
+  "/:marketplaceId/earnings-detail",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  getBasicEarningsDetail
 );
 
 router.get(

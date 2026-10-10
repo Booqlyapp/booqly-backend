@@ -320,19 +320,161 @@ export class ProviderAnalyticsService {
   static async getEarningsSummary(
     marketplaceId: string,
     options?: { assignedTeamMemberId?: string }
-  ): Promise<{ today: number; thisWeek: number; thisMonth: number }> {
+  ): Promise<{
+    today: number;
+    thisWeek: number;
+    thisMonth: number;
+    todayCompletedCount: number;
+  }> {
     const now = new Date();
     const today = resolveAnalyticsDateRange({ period: "today", now });
     const week = resolveAnalyticsDateRange({ period: "week", now });
     const month = resolveAnalyticsDateRange({ period: "month", now });
 
-    const [t, w, m] = await Promise.all([
+    const [t, w, m, todayCompletedCount] = await Promise.all([
       this.sumCompletedRevenue(marketplaceId, today, options?.assignedTeamMemberId),
       this.sumCompletedRevenue(marketplaceId, week, options?.assignedTeamMemberId),
       this.sumCompletedRevenue(marketplaceId, month, options?.assignedTeamMemberId),
+      this.countCompletedAppointments(
+        marketplaceId,
+        today,
+        options?.assignedTeamMemberId
+      ),
     ]);
 
-    return { today: t, thisWeek: w, thisMonth: m };
+    return { today: t, thisWeek: w, thisMonth: m, todayCompletedCount };
+  }
+
+  /**
+   * Basic earnings detail: completed appointments only.
+   * Week is Monday–Sunday. Does not return booking-analytics metrics.
+   */
+  static async getBasicEarningsDetail(
+    marketplaceId: string,
+    options?: { assignedTeamMemberId?: string; weekStart?: string }
+  ): Promise<{
+    weekStart: string;
+    weekEnd: string;
+    weekTotal: number;
+    today: string;
+    canGoNext: boolean;
+    days: Array<{ date: string; amount: number; isFuture: boolean }>;
+    appointments: Array<{
+      date: string;
+      dateTime: string;
+      clientName: string | null;
+      serviceName: string | null;
+      amount: number;
+    }>;
+    months: Array<{ month: string; amount: number }>;
+  }> {
+    const today = startOfDay(new Date());
+    const requested = options?.weekStart
+      ? startOfDay(new Date(`${options.weekStart}T00:00:00`))
+      : today;
+    const currentMonday = startOfMonday(today);
+    let monday = startOfMonday(
+      Number.isNaN(requested.getTime()) ? today : requested
+    );
+    if (monday.getTime() > currentMonday.getTime()) {
+      monday = currentMonday;
+    }
+    const sunday = endOfDay(new Date(monday));
+    sunday.setDate(monday.getDate() + 6);
+
+    const where: any = {
+      marketplaceId,
+      status: COMPLETED,
+      dateTime: { [Op.between]: [monday, sunday] },
+    };
+    if (options?.assignedTeamMemberId) {
+      where.assignedTeamMemberId = options.assignedTeamMemberId;
+    }
+
+    const rows = await Appointment.findAll({
+      where,
+      include: [{ model: User, as: "user", attributes: ["id", "name"] }],
+      order: [["dateTime", "ASC"]],
+    });
+
+    const serviceIds = Array.from(
+      new Set(rows.map((a) => a.serviceId).filter(Boolean))
+    );
+    const services =
+      serviceIds.length > 0
+        ? ((await Service.findAll({
+            where: { id: { [Op.in]: serviceIds } },
+            attributes: ["id", "name"],
+            raw: true,
+          })) as any[])
+        : [];
+    const serviceMap = new Map(services.map((s) => [s.id, s.name]));
+
+    const dayAmounts = new Map<string, number>();
+    const appointments = rows.map((a: any) => {
+      const when = new Date(a.dateTime);
+      const date = formatYmd(when);
+      const price = Number(a.price) || 0;
+      dayAmounts.set(date, (dayAmounts.get(date) || 0) + price);
+      return {
+        date,
+        dateTime: when.toISOString(),
+        clientName: a.user?.name || null,
+        serviceName: serviceMap.get(a.serviceId) || null,
+        amount: price,
+      };
+    });
+
+    const days = Array.from({ length: 7 }, (_, index) => {
+      const day = new Date(monday);
+      day.setDate(monday.getDate() + index);
+      const date = formatYmd(day);
+      return {
+        date,
+        amount: dayAmounts.get(date) || 0,
+        isFuture: startOfDay(day).getTime() > today.getTime(),
+      };
+    });
+
+    const weekTotal = days.reduce((sum, day) => sum + day.amount, 0);
+    const nextMonday = new Date(monday);
+    nextMonday.setDate(monday.getDate() + 7);
+
+    const months = await Promise.all(
+      Array.from({ length: 6 }, async (_, index) => {
+        const monthDate = new Date(today.getFullYear(), today.getMonth() - index, 1);
+        const range = {
+          startDate: new Date(monthDate.getFullYear(), monthDate.getMonth(), 1, 0, 0, 0, 0),
+          endDate: new Date(
+            monthDate.getFullYear(),
+            monthDate.getMonth() + 1,
+            0,
+            23,
+            59,
+            59,
+            999
+          ),
+          preset: "month" as const,
+        };
+        const amount = await this.sumCompletedRevenue(
+          marketplaceId,
+          range,
+          options?.assignedTeamMemberId
+        );
+        return { month: formatYmd(monthDate), amount };
+      })
+    );
+
+    return {
+      weekStart: formatYmd(monday),
+      weekEnd: formatYmd(sunday),
+      weekTotal,
+      today: formatYmd(today),
+      canGoNext: nextMonday.getTime() <= currentMonday.getTime(),
+      days,
+      appointments,
+      months,
+    };
   }
 
   /** PRD: Stripe payout history for the marketplace owner Connect account. */
@@ -347,6 +489,7 @@ export class ProviderAnalyticsService {
       status: string;
       arrivalDate: string | null;
       created: string;
+      bankLast4: string | null;
     }>
   > {
     const owner = await User.findByPk(ownerUserId, {
@@ -357,10 +500,14 @@ export class ProviderAnalyticsService {
     }
 
     try {
-      const payouts = await stripe.payouts.list(
-        { limit: Math.min(limit, 50) },
-        { stripeAccount: owner.stripeConnectAccountId }
-      );
+      const accountId = owner.stripeConnectAccountId;
+      const [payouts, bankLast4] = await Promise.all([
+        stripe.payouts.list(
+          { limit: Math.min(limit, 50) },
+          { stripeAccount: accountId }
+        ),
+        this.getPayoutBankLast4(accountId),
+      ]);
       return payouts.data.map((p) => ({
         id: p.id,
         amount: p.amount / 100,
@@ -370,6 +517,7 @@ export class ProviderAnalyticsService {
           ? new Date(p.arrival_date * 1000).toISOString()
           : null,
         created: new Date(p.created * 1000).toISOString(),
+        bankLast4,
       }));
     } catch (err) {
       console.error("Failed to list Stripe payouts for analytics:", err);
@@ -900,6 +1048,39 @@ export class ProviderAnalyticsService {
     }));
   }
 
+  private static async getPayoutBankLast4(
+    stripeAccountId: string
+  ): Promise<string | null> {
+    if (!stripe) return null;
+    try {
+      const external = await stripe.accounts.listExternalAccounts(
+        stripeAccountId,
+        { object: "bank_account", limit: 1 }
+      );
+      const bank = external.data[0] as { last4?: string } | undefined;
+      return bank?.last4 ?? null;
+    } catch (err) {
+      console.error("Failed to read Stripe payout bank for analytics:", err);
+      return null;
+    }
+  }
+
+  private static async countCompletedAppointments(
+    marketplaceId: string,
+    range: AnalyticsDateRange,
+    assignedTeamMemberId?: string
+  ): Promise<number> {
+    const where: any = {
+      marketplaceId,
+      status: COMPLETED,
+      dateTime: { [Op.between]: [range.startDate, range.endDate] },
+    };
+    if (assignedTeamMemberId) {
+      where.assignedTeamMemberId = assignedTeamMemberId;
+    }
+    return Appointment.count({ where });
+  }
+
   private static async sumCompletedRevenue(
     marketplaceId: string,
     range: AnalyticsDateRange,
@@ -1244,4 +1425,30 @@ export class ProviderAnalyticsService {
       repeatClients: data.repeatClients.size,
     }));
   }
+}
+
+function startOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function endOfDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x;
+}
+
+function startOfMonday(d: Date): Date {
+  const x = startOfDay(d);
+  const weekday = x.getDay();
+  const diff = weekday === 0 ? -6 : 1 - weekday;
+  x.setDate(x.getDate() + diff);
+  return x;
+}
+
+function formatYmd(d: Date): string {
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
 }
