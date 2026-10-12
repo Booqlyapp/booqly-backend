@@ -692,6 +692,7 @@ export class ProviderAnalyticsService {
     teamPerformance: Array<{
       teamMemberId: string | null;
       name: string;
+      profilePic: string | null;
       bookings: number;
       revenue: number;
       rating: number | null;
@@ -791,27 +792,30 @@ export class ProviderAnalyticsService {
         teamOwnerId: ownerUserId,
         isTeamMember: true,
       },
-      attributes: ["id", "name"],
+      attributes: ["id", "name", "profilePic"],
     });
 
     const owner = await User.findByPk(ownerUserId, {
-      attributes: ["id", "name", "businessName"],
+      attributes: ["id", "name", "businessName", "profilePic"],
     });
 
     const membersForPerf: Array<{
       id: string | null;
       name: string;
       isOwner: boolean;
+      profilePic: string | null;
     }> = [
       {
         id: null,
         name: owner?.businessName || owner?.name || "Owner",
         isOwner: true,
+        profilePic: owner?.profilePic || null,
       },
       ...teamMembers.map((m) => ({
         id: m.id as string,
         name: m.name || "Team member",
         isOwner: false,
+        profilePic: m.profilePic || null,
       })),
     ];
 
@@ -841,6 +845,7 @@ export class ProviderAnalyticsService {
         return {
           teamMemberId: m.id,
           name: m.name,
+          profilePic: m.profilePic,
           bookings: memberAppts.length,
           revenue,
           rating,
