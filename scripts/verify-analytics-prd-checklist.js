@@ -26,6 +26,30 @@ const flutterView = fs.readFileSync(
   ),
   "utf8"
 );
+const suiteOverview = fs.readFileSync(
+  path.join(
+    root,
+    "..",
+    "app/lib/views/common/analytics/suite_analytics_overview.dart"
+  ),
+  "utf8"
+);
+const suiteMemberDetail = fs.readFileSync(
+  path.join(
+    root,
+    "..",
+    "app/lib/views/common/analytics/suite_team_member_detail.dart"
+  ),
+  "utf8"
+);
+const suitePayments = fs.readFileSync(
+  path.join(
+    root,
+    "..",
+    "app/lib/views/common/analytics/suite_payments_view.dart"
+  ),
+  "utf8"
+);
 const dateUtil = fs.readFileSync(
   path.join(root, "src/utils/analytics_date_range.ts"),
   "utf8"
@@ -63,7 +87,22 @@ const checks = [
   ["Tips only when enabled", service.includes("tipsAndCommissionsEnabled: false") && flutterView.includes("tipsEnabled")],
   ["Team member detail (bookings/services/earnings/ratings)", service.includes("getTeamMemberDetail") && routes.includes("/team/")],
   ["Client loyalty + booking history", service.includes("loyaltyRate") && service.includes("bookingHistory")],
-  ["Flutter team member detail sheet", flutterView.includes("_openTeamMemberDetail")],
+  [
+    "Flutter team member detail sheet",
+    suiteOverview.includes("_openTeamMemberDetail") &&
+      suiteMemberDetail.includes("SuiteTeamMemberDetailView") &&
+      suiteMemberDetail.includes("Earnings by week") &&
+      suiteMemberDetail.includes("Ratings & reviews"),
+  ],
+  [
+    "Suite owner payments screen",
+    suiteOverview.includes("SuitePaymentsView") &&
+      suitePayments.includes("SuitePaymentsView") &&
+      suitePayments.includes("Export earnings report") &&
+      !suitePayments.includes("Track tips") &&
+      !suitePayments.includes("Track commissions") &&
+      suiteMemberDetail.includes("View \$first's payments"),
+  ],
   ["Post-deploy test runner present", fs.existsSync(path.join(root, "scripts/test-analytics-post-deploy.js"))],
 ];
 

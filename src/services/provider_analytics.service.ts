@@ -745,6 +745,11 @@ export class ProviderAnalyticsService {
         serviceName: string;
         revenue: number;
         bookings: number;
+        byTeamMember: Array<{
+          teamMemberId: string | null;
+          name: string;
+          revenue: number;
+        }>;
       }>;
       tipsAndCommissionsEnabled: boolean;
     };
@@ -912,7 +917,7 @@ export class ProviderAnalyticsService {
       };
     });
 
-    const revenueByService = await this.getRevenueByService(marketplaceId, {
+    const revenueByServiceBase = await this.getRevenueByService(marketplaceId, {
       dateRange: filters.dateRange,
       teamMemberId: filters.teamMemberId,
       serviceId: filters.serviceId,
@@ -921,6 +926,54 @@ export class ProviderAnalyticsService {
 
     // Suite total from team rows — no double counting
     const totalFromTeam = teamPerformance.reduce((s, t) => s + t.revenue, 0);
+
+    // Per-service × team-member revenue for Payments stacked bars (completed only).
+    const completedForPayments = suiteWide.filter((a) => a.status === COMPLETED);
+    const serviceMemberMap = new Map<
+      string,
+      Map<string, { teamMemberId: string | null; name: string; revenue: number }>
+    >();
+    for (const a of completedForPayments) {
+      const sid = a.serviceId ? String(a.serviceId) : "";
+      if (!sid) continue;
+      if (filters.teamMemberId === "owner" && a.assignedTeamMemberId != null) {
+        continue;
+      }
+      if (
+        filters.teamMemberId &&
+        filters.teamMemberId !== "owner" &&
+        a.assignedTeamMemberId !== filters.teamMemberId
+      ) {
+        continue;
+      }
+      const memberKey = a.assignedTeamMemberId
+        ? String(a.assignedTeamMemberId)
+        : "owner";
+      const memberMeta = membersForPerf.find((m) =>
+        m.isOwner ? memberKey === "owner" : m.id === memberKey
+      );
+      if (!serviceMemberMap.has(sid)) {
+        serviceMemberMap.set(sid, new Map());
+      }
+      const inner = serviceMemberMap.get(sid)!;
+      const existing = inner.get(memberKey) || {
+        teamMemberId: memberMeta?.isOwner ? null : memberMeta?.id || null,
+        name: memberMeta?.name || "Team",
+        revenue: 0,
+      };
+      existing.revenue += Number(a.price || 0);
+      inner.set(memberKey, existing);
+    }
+
+    const revenueByService = revenueByServiceBase.map((s) => ({
+      serviceId: s.serviceId,
+      serviceName: s.serviceName,
+      revenue: s.revenue,
+      bookings: s.bookings,
+      byTeamMember: Array.from(
+        serviceMemberMap.get(String(s.serviceId))?.values() || []
+      ).sort((a, b) => b.revenue - a.revenue),
+    }));
 
     const stationIndex = new Map<string, number>();
     membersForPerf.forEach((m, idx) => {
@@ -1049,16 +1102,31 @@ export class ProviderAnalyticsService {
   ): Promise<{
     teamMemberId: string | null;
     name: string;
+    jobTitle: string | null;
+    profilePic: string | null;
     isOwner: boolean;
+    stationNumber: number;
+    suiteRank: number | null;
     bookings: number;
     completedBookings: number;
     earnings: number;
+    clients: number;
     rating: number | null;
+    earningsByWeek: Array<{ label: string; revenue: number; weekStart: string }>;
     services: Array<{
       serviceId: string;
       serviceName: string;
       bookings: number;
       revenue: number;
+    }>;
+    ratingDistribution: Record<1 | 2 | 3 | 4 | 5, number>;
+    reviewCount: number;
+    reviews: Array<{
+      id: string;
+      clientName: string;
+      rating: number;
+      comment: string | null;
+      createdAt: string;
     }>;
     recentBookings: Array<{
       id: string;
@@ -1073,24 +1141,36 @@ export class ProviderAnalyticsService {
     const memberKey = isOwner ? "owner" : teamMemberId;
 
     let name = "Team member";
+    let jobTitle: string | null = null;
+    let profilePic: string | null = null;
+
+    const teamMembers = await User.findAll({
+      where: { teamOwnerId: ownerUserId, isTeamMember: true },
+      attributes: ["id", "name", "jobTitle", "profilePic", "createdAt"],
+      order: [["createdAt", "ASC"]],
+    });
+
+    const stationIndex = new Map<string, number>();
+    stationIndex.set("owner", 1);
+    teamMembers.forEach((m, i) => {
+      stationIndex.set(String(m.id), i + 2);
+    });
+
     if (isOwner) {
       const owner = await User.findByPk(ownerUserId, {
-        attributes: ["name", "businessName"],
+        attributes: ["name", "businessName", "jobTitle", "profilePic"],
       });
       name = owner?.businessName || owner?.name || "Owner";
+      jobTitle = owner?.jobTitle || "Suite owner";
+      profilePic = owner?.profilePic || null;
     } else {
-      const member = await User.findOne({
-        where: {
-          id: teamMemberId,
-          teamOwnerId: ownerUserId,
-          isTeamMember: true,
-        },
-        attributes: ["name"],
-      });
+      const member = teamMembers.find((m) => String(m.id) === teamMemberId);
       if (!member) {
         throw new Error("Team member not found");
       }
       name = member.name || "Team member";
+      jobTitle = member.jobTitle || null;
+      profilePic = member.profilePic || null;
     }
 
     const filters: AnalyticsFilters = {
@@ -1114,20 +1194,158 @@ export class ProviderAnalyticsService {
       "bookings"
     );
 
+    const earningsByWeek = this.bucketRevenueByWeek(
+      basic.revenueOverTime,
+      dateRange
+    );
+
+    // Suite rank by completed revenue in the same period (1 = top).
+    const suiteWide = await Appointment.findAll({
+      where: buildAppointmentWhere(marketplaceId, {
+        dateRange,
+        bookingStatus: "completed",
+      }) as any,
+      attributes: ["assignedTeamMemberId", "price"],
+      raw: true,
+    });
+    const revenueByKey = new Map<string, number>();
+    revenueByKey.set("owner", 0);
+    for (const m of teamMembers) {
+      revenueByKey.set(String(m.id), 0);
+    }
+    for (const row of suiteWide as any[]) {
+      const key = row.assignedTeamMemberId
+        ? String(row.assignedTeamMemberId)
+        : "owner";
+      if (!revenueByKey.has(key)) continue;
+      revenueByKey.set(
+        key,
+        (revenueByKey.get(key) || 0) + Number(row.price || 0)
+      );
+    }
+    const ranked = Array.from(revenueByKey.entries()).sort(
+      (a, b) => b[1] - a[1]
+    );
+    const suiteRankIndex = ranked.findIndex(([key]) => key === memberKey);
+    const suiteRank =
+      suiteRankIndex >= 0 && (revenueByKey.get(memberKey) || 0) > 0
+        ? suiteRankIndex + 1
+        : null;
+
+    // Reviews / distribution are appointment-linked for this member (all-time),
+    // matching getMemberRating — KPIs above stay period-scoped.
+    const memberApptIds = (
+      await Appointment.findAll({
+        where: {
+          marketplaceId,
+          ...(isOwner
+            ? { assignedTeamMemberId: null }
+            : { assignedTeamMemberId: teamMemberId }),
+        },
+        attributes: ["id"],
+        raw: true,
+      })
+    ).map((a: any) => a.id as string);
+
+    const ratingDistribution: Record<1 | 2 | 3 | 4 | 5, number> = {
+      1: 0,
+      2: 0,
+      3: 0,
+      4: 0,
+      5: 0,
+    };
+    let reviews: Array<{
+      id: string;
+      clientName: string;
+      rating: number;
+      comment: string | null;
+      createdAt: string;
+    }> = [];
+
+    if (memberApptIds.length > 0) {
+      const [reviewRows, distRows] = await Promise.all([
+        Review.findAll({
+          where: {
+            appointmentId: { [Op.in]: memberApptIds },
+            status: "approved",
+            rating: { [Op.gte]: 1 },
+          },
+          include: [
+            {
+              model: User,
+              as: "client",
+              attributes: ["id", "name"],
+            },
+          ],
+          order: [["createdAt", "DESC"]],
+          limit: 20,
+        }),
+        Review.findAll({
+          where: {
+            appointmentId: { [Op.in]: memberApptIds },
+            status: "approved",
+            rating: { [Op.gte]: 1 },
+          },
+          attributes: [
+            "rating",
+            [Sequelize.fn("COUNT", Sequelize.col("id")), "cnt"],
+          ],
+          group: ["rating"],
+          raw: true,
+        }) as Promise<any[]>,
+      ]);
+
+      for (const row of distRows) {
+        const stars = Math.round(Number(row.rating));
+        if (stars >= 1 && stars <= 5) {
+          ratingDistribution[stars as 1 | 2 | 3 | 4 | 5] = parseInt(
+            row.cnt || "0",
+            10
+          );
+        }
+      }
+
+      reviews = (reviewRows as any[]).map((r) => ({
+        id: r.id,
+        clientName: r.client?.name || "Client",
+        rating: Number(r.rating),
+        comment: r.comment || null,
+        createdAt:
+          r.createdAt?.toISOString?.() ||
+          (r.createdAt ? String(r.createdAt) : ""),
+      }));
+    }
+
+    const reviewCount =
+      ratingDistribution[1] +
+      ratingDistribution[2] +
+      ratingDistribution[3] +
+      ratingDistribution[4] +
+      ratingDistribution[5];
+
     return {
       teamMemberId: isOwner ? null : teamMemberId,
       name,
+      jobTitle,
+      profilePic,
       isOwner,
+      stationNumber: stationIndex.get(memberKey) || 1,
+      suiteRank,
       bookings: basic.overview.totalBookings,
       completedBookings: basic.overview.completedBookings,
       earnings: basic.overview.totalRevenue,
+      clients: basic.overview.totalClientCount,
       rating,
+      earningsByWeek,
       services: services.map((s) => ({
         serviceId: s.serviceId,
         serviceName: s.serviceName,
         bookings: s.bookings,
         revenue: s.revenue,
       })),
+      ratingDistribution,
+      reviewCount,
+      reviews,
       recentBookings: recentBookings.slice(0, 50).map((b) => ({
         id: b.id,
         dateTime: b.dateTime,
@@ -1137,6 +1355,52 @@ export class ProviderAnalyticsService {
         serviceName: b.serviceName,
       })),
     };
+  }
+
+  /** Bucket daily revenue into Wk 1..N within the selected date range. */
+  private static bucketRevenueByWeek(
+    revenueOverTime: Array<{ date: string; revenue: number; bookings: number }>,
+    dateRange: AnalyticsDateRange
+  ): Array<{ label: string; revenue: number; weekStart: string }> {
+    const start = new Date(dateRange.startDate);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(dateRange.endDate);
+    end.setHours(23, 59, 59, 999);
+
+    const mondayOf = (d: Date) => {
+      const copy = new Date(d);
+      copy.setHours(0, 0, 0, 0);
+      const day = copy.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      copy.setDate(copy.getDate() + diff);
+      return copy;
+    };
+
+    let cursor = mondayOf(start);
+    const bars: Array<{ label: string; revenue: number; weekStart: string }> =
+      [];
+    let index = 1;
+    while (cursor <= end) {
+      const weekEnd = new Date(cursor);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
+      const revenue = revenueOverTime
+        .filter((row) => {
+          const d = new Date(row.date);
+          return d >= cursor && d <= weekEnd;
+        })
+        .reduce((sum, row) => sum + Number(row.revenue || 0), 0);
+      bars.push({
+        label: `Wk ${index}`,
+        revenue,
+        weekStart: cursor.toISOString().slice(0, 10),
+      });
+      cursor = new Date(cursor);
+      cursor.setDate(cursor.getDate() + 7);
+      index += 1;
+      if (index > 12) break;
+    }
+    return bars;
   }
 
   /** Drill-down: records behind a metric total (PRD detail state). */
