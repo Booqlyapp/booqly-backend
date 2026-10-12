@@ -676,10 +676,18 @@ export class ProviderAnalyticsService {
     businessOverview: {
       upcomingAppointments: number;
       teamBookingActivity: number;
+      completedBookings: number;
       totalSuiteRevenue: number;
       monthlyRevenueGoal: number | null;
+      splitRevenueGoalByMember: boolean;
+      revenueGoalProgressAlerts: boolean;
       cancellations: number;
       noShows: number;
+      goalContext: {
+        last3MonthsAverage: number;
+        previousMonthRevenue: number;
+        previousMonthLabel: string;
+      };
     };
     teamPerformance: Array<{
       teamMemberId: string | null;
@@ -740,6 +748,16 @@ export class ProviderAnalyticsService {
       }>;
       tipsAndCommissionsEnabled: boolean;
     };
+    /** Pending appointments later today for the suite / selected member. */
+    upNextToday: Array<{
+      appointmentId: string;
+      dateTime: string;
+      serviceName: string | null;
+      clientName: string | null;
+      teamMemberId: string | null;
+      teamMemberName: string;
+      stationNumber: number;
+    }>;
   }> {
     const marketplace = await Marketplace.findByPk(marketplaceId);
     const personFilter = filters.teamMemberId || undefined;
@@ -904,16 +922,81 @@ export class ProviderAnalyticsService {
     // Suite total from team rows — no double counting
     const totalFromTeam = teamPerformance.reduce((s, t) => s + t.revenue, 0);
 
+    const stationIndex = new Map<string, number>();
+    membersForPerf.forEach((m, idx) => {
+      stationIndex.set(m.isOwner ? "owner" : String(m.id), idx + 1);
+    });
+    const nameByMember = new Map<string, string>();
+    membersForPerf.forEach((m) => {
+      nameByMember.set(m.isOwner ? "owner" : String(m.id), m.name);
+    });
+
+    const upNextWhere: any = {
+      marketplaceId,
+      status: "pending",
+      dateTime: { [Op.between]: [now, dayEnd] },
+    };
+    if (filters.teamMemberId === "owner") {
+      upNextWhere.assignedTeamMemberId = null;
+    } else if (filters.teamMemberId) {
+      upNextWhere.assignedTeamMemberId = filters.teamMemberId;
+    }
+    if (filters.serviceId) {
+      upNextWhere.serviceId = filters.serviceId;
+    }
+
+    const upNextRows = await Appointment.findAll({
+      where: upNextWhere,
+      include: [{ model: User, as: "user", attributes: ["id", "name"] }],
+      order: [["dateTime", "ASC"]],
+      limit: 8,
+    });
+    const upNextServiceIds = Array.from(
+      new Set(upNextRows.map((a) => a.serviceId).filter(Boolean))
+    );
+    const upNextServices =
+      upNextServiceIds.length > 0
+        ? ((await Service.findAll({
+            where: { id: { [Op.in]: upNextServiceIds } },
+            attributes: ["id", "name"],
+            raw: true,
+          })) as any[])
+        : [];
+    const upNextServiceMap = new Map(
+      upNextServices.map((s) => [s.id, s.name])
+    );
+    const upNextToday = upNextRows.map((a: any) => {
+      const memberKey = a.assignedTeamMemberId
+        ? String(a.assignedTeamMemberId)
+        : "owner";
+      return {
+        appointmentId: a.id,
+        dateTime: a.dateTime?.toISOString?.() || String(a.dateTime),
+        serviceName: upNextServiceMap.get(a.serviceId) || null,
+        clientName: a.user?.name || null,
+        teamMemberId: a.assignedTeamMemberId || null,
+        teamMemberName: nameByMember.get(memberKey) || "Team",
+        stationNumber: stationIndex.get(memberKey) || 1,
+      };
+    });
+
+    const goalContext = await this.getRevenueGoalContext(marketplaceId);
+
     return {
       businessOverview: {
         upcomingAppointments,
         teamBookingActivity: basic.overview.totalBookings,
+        completedBookings: basic.overview.completedBookings,
         totalSuiteRevenue: personFilter ? basic.overview.totalRevenue : totalFromTeam,
         monthlyRevenueGoal: marketplace?.monthlyRevenueGoal != null
           ? Number(marketplace.monthlyRevenueGoal)
           : null,
+        splitRevenueGoalByMember: marketplace?.splitRevenueGoalByMember === true,
+        revenueGoalProgressAlerts:
+          marketplace?.revenueGoalProgressAlerts !== false,
         cancellations: basic.bookingsByStatus.canceled,
         noShows: basic.bookingsByStatus.noShow,
+        goalContext,
       },
       teamPerformance,
       occupancy: {
@@ -950,6 +1033,7 @@ export class ProviderAnalyticsService {
         // No tip/commission columns on appointments — not enabled
         tipsAndCommissionsEnabled: false,
       },
+      upNextToday,
     };
   }
 
@@ -1062,6 +1146,7 @@ export class ProviderAnalyticsService {
     metric:
       | "bookings"
       | "completed"
+      | "upcoming"
       | "cancelled"
       | "no_shows"
       | "clients"
@@ -1075,6 +1160,7 @@ export class ProviderAnalyticsService {
       clientName: string | null;
       serviceName: string | null;
       assignedTeamMemberId: string | null;
+      stationNumber: number;
     }>
   > {
     let statusFilter: AnalyticsFilters["bookingStatus"] = filters.bookingStatus;
@@ -1084,11 +1170,15 @@ export class ProviderAnalyticsService {
 
     const where = buildAppointmentWhere(marketplaceId, {
       ...filters,
-      bookingStatus: statusFilter,
-    });
+      bookingStatus: metric === "upcoming" ? null : statusFilter,
+      bookingStatuses: metric === "upcoming" ? null : filters.bookingStatuses,
+    }) as any;
+    if (metric === "upcoming") {
+      where.status = "pending";
+    }
 
     const rows = await Appointment.findAll({
-      where: where as any,
+      where,
       include: [{ model: User, as: "user", attributes: ["id", "name"] }],
       order: [["dateTime", "DESC"]],
       limit: 100,
@@ -1107,34 +1197,128 @@ export class ProviderAnalyticsService {
         : [];
     const serviceMap = new Map(services.map((s) => [s.id, s.name]));
 
-    return rows.map((a: any) => ({
-      id: a.id,
-      dateTime: a.dateTime?.toISOString?.() || String(a.dateTime),
-      status: a.status,
-      price: Number(a.price),
-      clientName: a.user?.name || null,
-      serviceName: serviceMap.get(a.serviceId) || null,
-      assignedTeamMemberId: a.assignedTeamMemberId,
-    }));
+    const marketplace = await Marketplace.findByPk(marketplaceId, {
+      attributes: ["userId"],
+    });
+    const stationIndex = new Map<string, number>();
+    if (marketplace?.userId) {
+      const teamMembers = await User.findAll({
+        where: { teamOwnerId: marketplace.userId, isTeamMember: true },
+        attributes: ["id"],
+        order: [["createdAt", "ASC"]],
+      });
+      stationIndex.set("owner", 1);
+      teamMembers.forEach((m, i) => {
+        stationIndex.set(String(m.id), i + 2);
+      });
+    }
+
+    return rows.map((a: any) => {
+      const memberKey = a.assignedTeamMemberId
+        ? String(a.assignedTeamMemberId)
+        : "owner";
+      return {
+        id: a.id,
+        dateTime: a.dateTime?.toISOString?.() || String(a.dateTime),
+        status: a.status,
+        price: Number(a.price),
+        clientName: a.user?.name || null,
+        serviceName: serviceMap.get(a.serviceId) || null,
+        assignedTeamMemberId: a.assignedTeamMemberId,
+        stationNumber: stationIndex.get(memberKey) || 1,
+      };
+    });
   }
 
   static async updateMonthlyRevenueGoal(
     marketplaceId: string,
     ownerUserId: string,
-    goal: number | null
-  ): Promise<number | null> {
+    goal: number | null,
+    options?: {
+      splitRevenueGoalByMember?: boolean;
+      revenueGoalProgressAlerts?: boolean;
+    }
+  ): Promise<{
+    monthlyRevenueGoal: number | null;
+    splitRevenueGoalByMember: boolean;
+    revenueGoalProgressAlerts: boolean;
+  }> {
     const marketplace = await Marketplace.findOne({
       where: { id: marketplaceId, userId: ownerUserId },
     });
     if (!marketplace) {
       throw new Error("Marketplace not found");
     }
-    await marketplace.update({
+    const patch: Record<string, unknown> = {
       monthlyRevenueGoal: goal == null ? null : Number(goal),
+    };
+    if (typeof options?.splitRevenueGoalByMember === "boolean") {
+      patch.splitRevenueGoalByMember = options.splitRevenueGoalByMember;
+    }
+    if (typeof options?.revenueGoalProgressAlerts === "boolean") {
+      patch.revenueGoalProgressAlerts = options.revenueGoalProgressAlerts;
+    }
+    await marketplace.update(patch);
+    await marketplace.reload();
+    return {
+      monthlyRevenueGoal:
+        marketplace.monthlyRevenueGoal != null
+          ? Number(marketplace.monthlyRevenueGoal)
+          : null,
+      splitRevenueGoalByMember: marketplace.splitRevenueGoalByMember === true,
+      revenueGoalProgressAlerts:
+        marketplace.revenueGoalProgressAlerts !== false,
+    };
+  }
+
+  /** Completed revenue helpers for the revenue-goal editor. */
+  private static async getRevenueGoalContext(marketplaceId: string): Promise<{
+    last3MonthsAverage: number;
+    previousMonthRevenue: number;
+    previousMonthLabel: string;
+  }> {
+    const now = new Date();
+    const threeStart = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+    const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+
+    const rows = (await Appointment.findAll({
+      where: {
+        marketplaceId,
+        status: COMPLETED,
+        dateTime: { [Op.between]: [threeStart, prevEnd] },
+      },
+      attributes: ["dateTime", "price"],
+      raw: true,
+    })) as Array<{ dateTime: Date | string; price: number }>;
+
+    const byMonth = new Map<string, number>();
+    for (const row of rows) {
+      const when = new Date(row.dateTime);
+      const key = `${when.getFullYear()}-${when.getMonth()}`;
+      byMonth.set(key, (byMonth.get(key) || 0) + Number(row.price || 0));
+    }
+
+    const monthTotals: number[] = [];
+    for (let i = 3; i >= 1; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${d.getMonth()}`;
+      monthTotals.push(byMonth.get(key) || 0);
+    }
+    const last3MonthsAverage =
+      monthTotals.reduce((sum, v) => sum + v, 0) / 3;
+
+    const prevKey = `${prevStart.getFullYear()}-${prevStart.getMonth()}`;
+    const previousMonthRevenue = byMonth.get(prevKey) || 0;
+    const previousMonthLabel = prevStart.toLocaleString("en-US", {
+      month: "long",
     });
-    return marketplace.monthlyRevenueGoal != null
-      ? Number(marketplace.monthlyRevenueGoal)
-      : null;
+
+    return {
+      last3MonthsAverage: Math.round(last3MonthsAverage * 100) / 100,
+      previousMonthRevenue: Math.round(previousMonthRevenue * 100) / 100,
+      previousMonthLabel,
+    };
   }
 
   // ─── private helpers ─────────────────────────────────────────────

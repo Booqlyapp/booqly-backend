@@ -30,6 +30,10 @@ interface MarketplaceAttributes {
   waitlistClaimWindowMinutes: number;
   /** Suite Owner analytics: optional monthly revenue goal (PRD). */
   monthlyRevenueGoal: number | null;
+  /** When true, monthly goal is divided across owner + team stations. */
+  splitRevenueGoalByMember: boolean;
+  /** Notify owner at 50% / 75% / 100% of monthly goal. */
+  revenueGoalProgressAlerts: boolean;
   scheduleId: string | null;
   userId: string | null;
   createdAt: CreationOptional<Date>;
@@ -64,6 +68,8 @@ export class Marketplace
   declare waitlistEnabled: CreationOptional<boolean>;
   declare waitlistClaimWindowMinutes: CreationOptional<number>;
   declare monthlyRevenueGoal: CreationOptional<number | null>;
+  declare splitRevenueGoalByMember: CreationOptional<boolean>;
+  declare revenueGoalProgressAlerts: CreationOptional<boolean>;
   declare scheduleId: string | null;
   declare userId: string | null;
   declare createdAt: CreationOptional<Date>;
@@ -180,6 +186,16 @@ export default function initMarketplace(sequelize: Sequelize) {
         type: DataTypes.DECIMAL(12, 2),
         allowNull: true,
         defaultValue: null,
+      },
+      splitRevenueGoalByMember: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      revenueGoalProgressAlerts: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
       },
       scheduleId: {
         type: DataTypes.UUID,

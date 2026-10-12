@@ -218,6 +218,37 @@ export const getProviderAnalytics = async (
     }
 
     if (isSuiteOwner) {
+      // Any active suite subscription unlocks full suite analytics (PRD).
+      if (!access.hasBasic && !access.hasAdvanced) {
+        const [earnings, payouts] = await Promise.all([
+          ProviderAnalyticsService.getEarningsSummary(marketplaceId),
+          ProviderAnalyticsService.getStripePayoutHistory(uid),
+        ]);
+        res.status(200).json({
+          status: true,
+          message: "Suite analytics requires an active subscription",
+          data: {
+            accessLevel: "earnings_only",
+            dateRange: filters.dateRange,
+            filters: {
+              teamMemberId: filters.teamMemberId,
+              serviceId: filters.serviceId,
+              bookingStatus: filters.bookingStatus,
+            },
+            earnings,
+            payouts,
+            restricted: {
+              suiteAnalytics: {
+                unlocksAt: "suite_subscription",
+                message:
+                  "Subscribe to a suite plan to unlock suite-wide analytics.",
+              },
+            },
+          },
+        });
+        return;
+      }
+
       const [suite, payouts, earnings] = await Promise.all([
         ProviderAnalyticsService.getSuiteAnalytics(
           marketplaceId,
@@ -686,6 +717,7 @@ export const getMetricDrilldown = async (
     const allowed = [
       "bookings",
       "completed",
+      "upcoming",
       "cancelled",
       "no_shows",
       "clients",
@@ -754,16 +786,24 @@ export const updateMonthlyRevenueGoal = async (
       return;
     }
 
+    const splitRaw = req.body?.splitRevenueGoalByMember;
+    const alertsRaw = req.body?.revenueGoalProgressAlerts;
     const saved = await ProviderAnalyticsService.updateMonthlyRevenueGoal(
       marketplaceId,
       req.userId,
-      goal
+      goal,
+      {
+        splitRevenueGoalByMember:
+          typeof splitRaw === "boolean" ? splitRaw : undefined,
+        revenueGoalProgressAlerts:
+          typeof alertsRaw === "boolean" ? alertsRaw : undefined,
+      }
     );
 
     res.status(200).json({
       status: true,
       message: "Monthly revenue goal updated",
-      data: { monthlyRevenueGoal: saved },
+      data: saved,
     });
   } catch (error: any) {
     console.error("Error updating revenue goal:", error);
