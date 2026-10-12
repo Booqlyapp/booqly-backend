@@ -22,6 +22,7 @@ interface CreateAppointmentData {
   depositAmount?: number;
   remainingBalance?: number;
   assignedTeamMemberId?: string;
+  paymentMethod?: "apple_pay" | "stripe_card" | "paypal" | "cash" | "other";
   services: Array<{
     serviceId: string;
     price: number;
@@ -49,8 +50,32 @@ export const createAppointment = async (
     const userId = req.user.id;
     
     // Destructure essential data from req.body
-    const { marketplaceId, dateTime, paymentStatus, price, services, depositAmount, remainingBalance, assignedTeamMemberId } =
-      req.body as CreateAppointmentData;
+    const {
+      marketplaceId,
+      dateTime,
+      paymentStatus,
+      price,
+      services,
+      depositAmount,
+      remainingBalance,
+      assignedTeamMemberId,
+      paymentMethod,
+    } = req.body as CreateAppointmentData;
+
+    const allowedPaymentMethods = [
+      "apple_pay",
+      "stripe_card",
+      "paypal",
+      "cash",
+      "other",
+    ] as const;
+    const resolvedPaymentMethod =
+      paymentMethod &&
+      allowedPaymentMethods.includes(
+        paymentMethod as (typeof allowedPaymentMethods)[number]
+      )
+        ? paymentMethod
+        : null;
 
     // Step 1: Validate essential fields
     if (
@@ -270,6 +295,7 @@ export const createAppointment = async (
         serviceId: services[0].serviceId, // Use first service as primary service
         assignedTeamMemberId: resolvedAssignedTeamMemberId,
         paymentStatus: paymentStatus ?? "pending",
+        paymentMethod: resolvedPaymentMethod,
         dateTime: appointmentDate,
         status: "pending", // Default
         price: price,
