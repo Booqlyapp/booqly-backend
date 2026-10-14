@@ -692,6 +692,7 @@ export class ProviderAnalyticsService {
       revenueGoalProgressAlerts: boolean;
       cancellations: number;
       noShows: number;
+      rescheduled: number;
       goalContext: {
         last3MonthsAverage: number;
         previousMonthRevenue: number;
@@ -1063,6 +1064,7 @@ export class ProviderAnalyticsService {
           marketplace?.revenueGoalProgressAlerts !== false,
         cancellations: basic.bookingsByStatus.canceled,
         noShows: basic.bookingsByStatus.noShow,
+        rescheduled: basic.bookingsByStatus.postponed,
         goalContext,
       },
       teamPerformance,
