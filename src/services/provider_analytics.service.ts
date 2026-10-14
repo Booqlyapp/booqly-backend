@@ -200,6 +200,8 @@ export class ProviderAnalyticsService {
           model: User,
           as: "user",
           attributes: ["id", "name", "email"],
+          // LEFT JOIN — never drop bookings if the client row is missing/soft-deleted
+          required: false,
         },
       ],
     });
@@ -398,7 +400,14 @@ export class ProviderAnalyticsService {
 
     const periodRows = await Appointment.findAll({
       where: periodWhere,
-      include: [{ model: User, as: "user", attributes: ["id", "name"] }],
+      include: [
+        {
+          model: User,
+          as: "user",
+          attributes: ["id", "name"],
+          required: false,
+        },
+      ],
       order: [["dateTime", "DESC"]],
     });
 
