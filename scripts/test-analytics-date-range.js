@@ -19,11 +19,13 @@ assert(today.endDate.getDate() === 7, "today end day");
 
 const week = resolveAnalyticsDateRange({ period: "week", now });
 assert(week.preset === "week", "week preset");
-assert(week.startDate.getDay() === 0, "week starts Sunday");
+assert(week.startDate.getDay() === 1, "week starts Monday");
+assert(week.endDate.getDay() === 0, "week ends Sunday");
 
 const month = resolveAnalyticsDateRange({ period: "month", now });
 assert(month.preset === "month", "month preset");
 assert(month.startDate.getDate() === 1, "month starts 1st");
+assert(month.endDate.getDate() === 31, "month ends last day");
 
 const custom = resolveAnalyticsDateRange({
   startDate: "2026-09-01",

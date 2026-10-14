@@ -22,15 +22,27 @@ function endOfDay(d: Date): Date {
   return x;
 }
 
-/** Sunday-start week to match existing dashboard weekly logic. */
+/** Monday-start week to match the mobile app (Mon–Sun). */
 function startOfWeek(d: Date): Date {
   const x = startOfDay(d);
-  x.setDate(x.getDate() - x.getDay());
+  const weekday = x.getDay(); // 0 = Sunday .. 6 = Saturday
+  const diff = weekday === 0 ? -6 : 1 - weekday;
+  x.setDate(x.getDate() + diff);
   return x;
+}
+
+function endOfWeek(d: Date): Date {
+  const x = startOfWeek(d);
+  x.setDate(x.getDate() + 6);
+  return endOfDay(x);
 }
 
 function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1, 0, 0, 0, 0);
+}
+
+function endOfMonth(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
 }
 
 /**
@@ -71,15 +83,16 @@ export function resolveAnalyticsDateRange(query: {
   if (period === "month") {
     return {
       startDate: startOfMonth(now),
-      endDate: endOfDay(now),
+      endDate: endOfMonth(now),
       preset: "month",
     };
   }
 
-  // week (default) and legacy "weekly"
+  // week (default) and legacy "weekly" — full Monday–Sunday window, matching
+  // the app's weekly views (calendar, earnings detail, Pro/Suite charts).
   return {
     startDate: startOfWeek(now),
-    endDate: endOfDay(now),
+    endDate: endOfWeek(now),
     preset: "week",
   };
 }
