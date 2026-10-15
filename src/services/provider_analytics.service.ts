@@ -460,7 +460,8 @@ export class ProviderAnalyticsService {
         lifetimeVisits: completedLife.length,
         periodVisits: periodCompleted.length,
         periodSpend: periodCompleted.reduce((sum, row) => sum + Number(row.price || 0), 0),
-        lifetimeNoShows: lifetime.filter((row) => row.status === "no_show").length,
+        lifetimeReschedules: lifetime.filter((row) => row.status === "postponed")
+          .length,
         isReturning: completedLife.length > 1,
         lastCompletedAt: lastCompleted ? lastCompleted.toISOString() : null,
         history: period.slice(0, 8).map((row: any) => ({
