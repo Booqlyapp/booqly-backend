@@ -65,6 +65,20 @@ function isAssignedServiceProvider(service: Service, userId: string): boolean {
   return ids.map(String).includes(String(userId));
 }
 
+/** Multipart FormData sends booleans as strings; `"false"` is truthy in JS. */
+function parseFormBoolean(value: unknown): boolean {
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0 || value == null) return false;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") return true;
+    if (normalized === "false" || normalized === "0" || normalized === "") {
+      return false;
+    }
+  }
+  return false;
+}
+
 export const updateService = async (
   req: any,
   res: Response
@@ -156,7 +170,9 @@ export const updateService = async (
     if (description !== undefined) updateData.description = description;
     if (price !== undefined) updateData.price = Number(price);
     if (duration !== undefined) updateData.duration = duration;
-    if (requireDeposit !== undefined) updateData.requireDeposit = requireDeposit;
+    if (requireDeposit !== undefined) {
+      updateData.requireDeposit = parseFormBoolean(requireDeposit);
+    }
     if (depositType !== undefined) updateData.depositType = depositType;
     if (depositAmount !== undefined) updateData.depositAmount = Number(depositAmount);
     if (imageUrl !== undefined) (updateData as any).imageUrl = imageUrl;
@@ -402,8 +418,11 @@ export const createService = async (
       });
     }
 
+    // Multipart sends "false" as a string — must parse before truthy checks.
+    const requireDepositFlag = parseFormBoolean(requireDeposit);
+
     // Validate deposit fields if requireDeposit is true
-    if (requireDeposit) {
+    if (requireDepositFlag) {
       if (!depositType || !['fixed', 'percentage'].includes(depositType)) {
         return res.status(400).json({
           status: false,
@@ -470,9 +489,9 @@ export const createService = async (
       price,
       duration: duration.trim(),
       isActive: true,
-      requireDeposit: requireDeposit || false,
-      depositType: requireDeposit ? depositType : undefined,
-      depositAmount: requireDeposit ? depositAmount : undefined,
+      requireDeposit: requireDepositFlag,
+      depositType: requireDepositFlag ? depositType : undefined,
+      depositAmount: requireDepositFlag ? depositAmount : undefined,
       imageUrl: imageUrl,
       providerTeamMemberIds,
     });
