@@ -1078,7 +1078,7 @@ export const updateAppointmentDateTime = async (
 
     return res.status(200).json({
       status: true,
-      message: `Appointment dateTime updated successfully to ${newAppointmentDate.toISOString()}.`,
+      message: "Appointment rescheduled successfully.",
       data: updatedAppointment.toJSON(),
     });
   } catch (err: any) {
