@@ -403,7 +403,11 @@ export const createProviderAppointment = async (
       depositAmount,
       remainingBalance,
       assignedTeamMemberId,
-    } = req.body as CreateAppointmentData & { clientId?: string };
+      allowScheduleConflict,
+    } = req.body as CreateAppointmentData & {
+      clientId?: string;
+      allowScheduleConflict?: boolean;
+    };
 
     if (
       !clientId ||
@@ -521,18 +525,6 @@ export const createProviderAppointment = async (
       });
     }
 
-    const isSlotOccupied = await WaitlistService.isSlotOccupied(
-      marketplaceId,
-      appointmentDate
-    );
-    if (isSlotOccupied) {
-      await transaction?.rollback();
-      return res.status(409).json({
-        status: false,
-        message: "This slot is fully booked.",
-      });
-    }
-
     const serviceIds = services.map((svc) => svc.serviceId);
     const validServices = await Service.findAll({
       where: {
@@ -596,6 +588,36 @@ export const createProviderAppointment = async (
     } else if (requestedAssignee && requester.isTeamMember) {
       // Service has no fixed providers; still tag the booking to the TM who created it.
       resolvedAssignedTeamMemberId = requester.id;
+    }
+
+    // Solo: marketplace-wide busy check. Suite: busy only for the same team member
+    // (different members at the same time are allowed). allowScheduleConflict lets
+    // solo/suite confirm a double-book after the Schedule Conflict dialog.
+    // Blocked times still always reject.
+    const providerAllowConflict =
+      (requester.role === "solo" || requester.role === "suite") &&
+      allowScheduleConflict === true;
+    const isSlotOccupied = await WaitlistService.isSlotOccupied(
+      marketplaceId,
+      appointmentDate,
+      {
+        ...(providerAllowConflict ? { ignoreAppointments: true } : {}),
+        ...(requester.role === "suite"
+          ? {
+              assignedTeamMemberId: resolvedAssignedTeamMemberId,
+              ignoreExternalAppointments: true,
+            }
+          : {}),
+      }
+    );
+    if (isSlotOccupied) {
+      await transaction?.rollback();
+      return res.status(409).json({
+        status: false,
+        message: providerAllowConflict
+          ? "This slot is blocked and cannot be booked."
+          : "This slot is fully booked.",
+      });
     }
 
     const baseServiceTotal = services.reduce(

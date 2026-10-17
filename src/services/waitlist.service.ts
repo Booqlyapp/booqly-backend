@@ -60,28 +60,53 @@ export class WaitlistService {
   static async isSlotOccupied(
     marketplaceId: string,
     dateTime: Date,
-    options?: { excludeAppointmentId?: string }
+    options?: {
+      excludeAppointmentId?: string;
+      /** When true, ignore appointments/external and only treat blocked times as occupied. */
+      ignoreAppointments?: boolean;
+      /**
+       * When provided (including null), only count appointments for that assignee.
+       * Used by suite so different team members can share the same clock time.
+       */
+      assignedTeamMemberId?: string | null;
+      /** When true, skip external appointment occupancy (suite per-member checks). */
+      ignoreExternalAppointments?: boolean;
+    }
   ): Promise<boolean> {
     const { start, end } = this.getMinuteWindow(dateTime);
 
+    const appointmentWhere: Record<string, unknown> = {
+      marketplaceId,
+      ...(options?.excludeAppointmentId
+        ? { id: { [Op.ne]: options.excludeAppointmentId } }
+        : {}),
+      status: { [Op.in]: ACTIVE_APPOINTMENT_STATUSES },
+      dateTime: { [Op.between]: [start, end] },
+    };
+    if (options && "assignedTeamMemberId" in options) {
+      appointmentWhere.assignedTeamMemberId =
+        options.assignedTeamMemberId == null
+          ? { [Op.is]: null }
+          : options.assignedTeamMemberId;
+    }
+
+    const skipExternal =
+      Boolean(options?.ignoreAppointments) ||
+      Boolean(options?.ignoreExternalAppointments);
+
     const [appointmentCount, externalCount, blockedTimes] = await Promise.all([
-      Appointment.count({
-        where: {
-          marketplaceId,
-          ...(options?.excludeAppointmentId
-            ? { id: { [Op.ne]: options.excludeAppointmentId } }
-            : {}),
-          status: { [Op.in]: ACTIVE_APPOINTMENT_STATUSES },
-          dateTime: { [Op.between]: [start, end] },
-        },
-      }),
-      ExternalAppointment.count({
-        where: {
-          marketplaceId,
-          status: { [Op.in]: ACTIVE_EXTERNAL_APPOINTMENT_STATUSES },
-          dateTime: { [Op.between]: [start, end] },
-        },
-      }),
+      options?.ignoreAppointments
+        ? Promise.resolve(0)
+        : Appointment.count({ where: appointmentWhere }),
+      skipExternal
+        ? Promise.resolve(0)
+        : ExternalAppointment.count({
+            where: {
+              marketplaceId,
+              status: { [Op.in]: ACTIVE_EXTERNAL_APPOINTMENT_STATUSES },
+              dateTime: { [Op.between]: [start, end] },
+            },
+          }),
       BlockedTime.findAll({
         where: { marketplaceId },
         attributes: ["startDateTime", "endDateTime", "frequency"],
