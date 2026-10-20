@@ -8,6 +8,7 @@ import { Service } from "../models/service_model";
 import { Social } from "../models/social_model";
 import { SubscriptionService } from "../services/subscription.service";
 import { WaitlistService } from "../services/waitlist.service";
+import { BookingWindowService } from "../services/booking_window.service";
 import { StripeService } from "../services/stripe.service";
 import {
   getBookingScope,
@@ -111,6 +112,21 @@ export const createAppointment = async (
         status: false,
         message:
           "The provided dateTime must be a valid ISO date set in the future (from today onwards).",
+      });
+    }
+
+    const bookingWindowCheck =
+      await BookingWindowService.assertMarketplaceAllowsDate(
+        marketplaceId,
+        appointmentDate
+      );
+    if (!bookingWindowCheck.allowed) {
+      await transaction?.rollback();
+      return res.status(403).json({
+        status: false,
+        message:
+          bookingWindowCheck.message ||
+          "This date is outside the provider's booking window.",
       });
     }
 
@@ -1037,6 +1053,21 @@ export const updateAppointmentDateTime = async (
       return res.status(403).json({
         status: false,
         message: "You can only update your own appointments.",
+      });
+    }
+
+    const bookingWindowCheck =
+      await BookingWindowService.assertMarketplaceAllowsDate(
+        appointment.marketplaceId,
+        newAppointmentDate
+      );
+    if (!bookingWindowCheck.allowed) {
+      await transaction?.rollback();
+      return res.status(403).json({
+        status: false,
+        message:
+          bookingWindowCheck.message ||
+          "This date is outside the provider's booking window.",
       });
     }
 

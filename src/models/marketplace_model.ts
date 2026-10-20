@@ -28,6 +28,10 @@ interface MarketplaceAttributes {
   bookingPageHeaderPdf: string | null;
   waitlistEnabled: boolean;
   waitlistClaimWindowMinutes: number;
+  /** When true, clients may only book within bookingWindowFrom..Until. */
+  bookingWindowLimited: boolean;
+  bookingWindowFrom: string | null;
+  bookingWindowUntil: string | null;
   /** Suite Owner analytics: optional monthly revenue goal (PRD). */
   monthlyRevenueGoal: number | null;
   /** When true, monthly goal is divided across owner + team stations. */
@@ -67,6 +71,9 @@ export class Marketplace
   declare bookingPageHeaderPdf: string | null;
   declare waitlistEnabled: CreationOptional<boolean>;
   declare waitlistClaimWindowMinutes: CreationOptional<number>;
+  declare bookingWindowLimited: CreationOptional<boolean>;
+  declare bookingWindowFrom: CreationOptional<string | null>;
+  declare bookingWindowUntil: CreationOptional<string | null>;
   declare monthlyRevenueGoal: CreationOptional<number | null>;
   declare splitRevenueGoalByMember: CreationOptional<boolean>;
   declare revenueGoalProgressAlerts: CreationOptional<boolean>;
@@ -181,6 +188,21 @@ export default function initMarketplace(sequelize: Sequelize) {
           min: 15,
           max: 30,
         },
+      },
+      bookingWindowLimited: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      bookingWindowFrom: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+        defaultValue: null,
+      },
+      bookingWindowUntil: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+        defaultValue: null,
       },
       monthlyRevenueGoal: {
         type: DataTypes.DECIMAL(12, 2),

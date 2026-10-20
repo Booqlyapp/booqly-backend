@@ -2057,6 +2057,117 @@ export const updateWaitlistSettings = async (
 };
 
 /**
+ * Update booking window for marketplace (solo / suite owner).
+ * Unlimited by default; when limited, clients may only book within from..until.
+ */
+export const updateBookingWindowSettings = async (
+  req: any,
+  res: Response
+): Promise<Response> => {
+  try {
+    const {
+      marketplaceId,
+      bookingWindowLimited,
+      bookingWindowFrom,
+      bookingWindowUntil,
+    } = req.body;
+
+    if (!marketplaceId) {
+      return res.status(400).json({
+        status: false,
+        message: "marketplaceId is required",
+      });
+    }
+
+    const user = req.user;
+    if (user.marketplaceId !== marketplaceId) {
+      return res.status(403).json({
+        status: false,
+        message: "You can only update your own marketplace.",
+      });
+    }
+
+    if (user.isTeamMember) {
+      return res.status(403).json({
+        status: false,
+        message: "Only solo providers and suite owners can update the booking window.",
+      });
+    }
+
+    if (typeof bookingWindowLimited !== "boolean") {
+      return res.status(400).json({
+        status: false,
+        message: "bookingWindowLimited must be a boolean value",
+      });
+    }
+
+    const dateOnlyRegex = /^\d{4}-\d{2}-\d{2}$/;
+    let fromValue: string | null = null;
+    let untilValue: string | null = null;
+
+    if (bookingWindowLimited) {
+      const from =
+        typeof bookingWindowFrom === "string" ? bookingWindowFrom.trim() : "";
+      const until =
+        typeof bookingWindowUntil === "string" ? bookingWindowUntil.trim() : "";
+
+      if (!dateOnlyRegex.test(from) || !dateOnlyRegex.test(until)) {
+        return res.status(400).json({
+          status: false,
+          message:
+            "When limited, bookingWindowFrom and bookingWindowUntil must be YYYY-MM-DD dates.",
+        });
+      }
+
+      if (from > until) {
+        return res.status(400).json({
+          status: false,
+          message: "bookingWindowFrom must be on or before bookingWindowUntil.",
+        });
+      }
+
+      fromValue = from;
+      untilValue = until;
+    }
+
+    const [updatedCount] = await Marketplace.update(
+      {
+        bookingWindowLimited,
+        bookingWindowFrom: fromValue,
+        bookingWindowUntil: untilValue,
+      },
+      {
+        where: { id: marketplaceId, deletedAt: null },
+      }
+    );
+
+    if (updatedCount === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "Marketplace not found or could not be updated.",
+      });
+    }
+
+    const updatedMarketplace = await Marketplace.findByPk(marketplaceId);
+
+    return res.status(200).json({
+      status: true,
+      message: "Booking window updated successfully",
+      data: updatedMarketplace,
+    });
+  } catch (error) {
+    console.error("Error updating booking window settings:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Internal server error",
+      ...(process.env.SEND_ERRORS === "true" && {
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
+    });
+  }
+};
+
+/**
  * Update booking page customization (title, subtitle, header image)
  */
 export const updateBookingPageCustomization = async (

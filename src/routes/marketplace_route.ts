@@ -12,6 +12,7 @@ import {
   updateMarketplaceCustomLink,
   updateShowPolicyRules,
   updateWaitlistSettings,
+  updateBookingWindowSettings,
   updateBookingPageCustomization,
 } from "../controllers/marketplace_controller";
 import { updateMarketplaceSocials } from "../controllers/social_controller";
@@ -40,6 +41,13 @@ router.put("/update-marketplace-policy-rules", authenticateToken, requireVerific
 router.put("/update-marketplace-custom-link", authenticateToken, requireVerification, updateMarketplaceCustomLink);
 router.put("/update-show-policy-rules", authenticateToken, requireVerification, updateShowPolicyRules);
 router.put("/update-waitlist-settings", authenticateToken, requireVerification, updateWaitlistSettings);
+router.put(
+  "/update-booking-window-settings",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  requireVerification,
+  updateBookingWindowSettings
+);
 router.post(
   "/update-booking-page-customization",
   authenticateToken,

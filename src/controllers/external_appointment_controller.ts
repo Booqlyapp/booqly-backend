@@ -10,6 +10,7 @@ import { Review } from "../models/review_model";
 import { User } from "../models/user_model";
 import { StripeService } from "../services/stripe.service";
 import { WaitlistService } from "../services/waitlist.service";
+import { BookingWindowService } from "../services/booking_window.service";
 import Stripe from 'stripe';
 import sequelize from "../config/database";
 import {
@@ -74,6 +75,21 @@ export const createExternalAppointment = async (
       return res.status(400).json({
         status: false,
         message: "dateTime must be a valid ISO date.",
+      });
+    }
+
+    const bookingWindowCheck =
+      await BookingWindowService.assertMarketplaceAllowsDate(
+        marketplaceId,
+        bookingDateTime
+      );
+    if (!bookingWindowCheck.allowed) {
+      await transaction.rollback();
+      return res.status(403).json({
+        status: false,
+        message:
+          bookingWindowCheck.message ||
+          "This date is outside the provider's booking window.",
       });
     }
 
@@ -338,6 +354,29 @@ export const getAvailableTimeSlots = async (
       });
     }
 
+    const requestedDate = new Date(date as string);
+    if (Number.isNaN(requestedDate.getTime())) {
+      return res.status(400).json({
+        status: false,
+        message: "Invalid date parameter",
+      });
+    }
+
+    const bookingWindowCheck =
+      await BookingWindowService.assertMarketplaceAllowsDate(
+        marketplaceId as string,
+        requestedDate
+      );
+    if (!bookingWindowCheck.allowed) {
+      return res.status(200).json({
+        status: true,
+        message:
+          bookingWindowCheck.message ||
+          "This date is outside the provider's booking window.",
+        data: { availableSlots: [] },
+      });
+    }
+
     // Get service details for duration
     const service = await Service.findOne({
       where: { id: serviceId as string, deletedAt: null },
@@ -592,6 +631,20 @@ export const createExternalAppointmentWithDeposit = async (
       return res.status(400).json({
         status: false,
         message: "dateTime must be a valid ISO date.",
+      });
+    }
+
+    const bookingWindowCheck =
+      await BookingWindowService.assertMarketplaceAllowsDate(
+        marketplaceId,
+        bookingDateTime
+      );
+    if (!bookingWindowCheck.allowed) {
+      return res.status(403).json({
+        status: false,
+        message:
+          bookingWindowCheck.message ||
+          "This date is outside the provider's booking window.",
       });
     }
 
