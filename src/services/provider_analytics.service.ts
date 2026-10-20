@@ -220,9 +220,9 @@ export class ProviderAnalyticsService {
     const completedCounts =
       clientIdsArray.length > 0
         ? ((await Appointment.findAll({
-            where: {
-              marketplaceId,
-              userId: { [Op.in]: clientIdsArray },
+          where: {
+            marketplaceId,
+            userId: { [Op.in]: clientIdsArray },
               status: COMPLETED,
             },
             attributes: [
@@ -230,7 +230,7 @@ export class ProviderAnalyticsService {
               [Sequelize.fn("COUNT", Sequelize.col("id")), "cnt"],
             ],
             group: ["userId"],
-            raw: true,
+          raw: true,
           })) as any[])
         : [];
 
@@ -370,7 +370,7 @@ export class ProviderAnalyticsService {
     assignedTeamMemberId?: string
   ): Promise<{ current: number; previous: number; changePercent: number | null }> {
     const current = await this.sumCompletedRevenue(
-      marketplaceId,
+        marketplaceId,
       range,
       assignedTeamMemberId
     );
@@ -419,7 +419,7 @@ export class ProviderAnalyticsService {
         ? ((await Service.findAll({
             where: { id: { [Op.in]: serviceIds } },
             attributes: ["id", "name"],
-            raw: true,
+      raw: true,
           })) as any[])
         : [];
     const serviceMap = new Map(services.map((service) => [service.id, service.name]));
@@ -532,7 +532,7 @@ export class ProviderAnalyticsService {
     sunday.setDate(monday.getDate() + 6);
 
     const where: any = {
-      marketplaceId,
+        marketplaceId,
       status: COMPLETED,
       dateTime: { [Op.between]: [monday, sunday] },
     };
@@ -554,7 +554,7 @@ export class ProviderAnalyticsService {
         ? ((await Service.findAll({
             where: { id: { [Op.in]: serviceIds } },
             attributes: ["id", "name"],
-            raw: true,
+      raw: true,
           })) as any[])
         : [];
     const serviceMap = new Map(services.map((s) => [s.id, s.name]));
@@ -736,7 +736,7 @@ export class ProviderAnalyticsService {
       /** PRD: booking history (recent completed/pending in range) */
       bookingHistory: Array<{
         appointmentId: string;
-        clientId: string;
+    clientId: string;
         clientName: string | null;
         serviceName: string | null;
         dateTime: string;
@@ -755,8 +755,8 @@ export class ProviderAnalyticsService {
       revenueByService: Array<{
         serviceId: string;
         serviceName: string;
-        revenue: number;
-        bookings: number;
+    revenue: number;
+    bookings: number;
         byTeamMember: Array<{
           teamMemberId: string | null;
           name: string;
@@ -1131,10 +1131,10 @@ export class ProviderAnalyticsService {
     rating: number | null;
     earningsByWeek: Array<{ label: string; revenue: number; weekStart: string }>;
     services: Array<{
-      serviceId: string;
-      serviceName: string;
-      bookings: number;
-      revenue: number;
+    serviceId: string;
+    serviceName: string;
+    bookings: number;
+    revenue: number;
     }>;
     ratingDistribution: Record<1 | 2 | 3 | 4 | 5, number>;
     reviewCount: number;
@@ -1253,14 +1253,14 @@ export class ProviderAnalyticsService {
     // matching getMemberRating — KPIs above stay period-scoped.
     const memberApptIds = (
       await Appointment.findAll({
-        where: {
-          marketplaceId,
+      where: {
+        marketplaceId,
           ...(isOwner
             ? { assignedTeamMemberId: null }
             : { assignedTeamMemberId: teamMemberId }),
         },
         attributes: ["id"],
-        raw: true,
+      raw: true,
       })
     ).map((a: any) => a.id as string);
 
@@ -1282,7 +1282,7 @@ export class ProviderAnalyticsService {
     if (memberApptIds.length > 0) {
       const [reviewRows, distRows] = await Promise.all([
         Review.findAll({
-          where: {
+      where: {
             appointmentId: { [Op.in]: memberApptIds },
             status: "approved",
             rating: { [Op.gte]: 1 },
@@ -1308,7 +1308,7 @@ export class ProviderAnalyticsService {
             [Sequelize.fn("COUNT", Sequelize.col("id")), "cnt"],
           ],
           group: ["rating"],
-          raw: true,
+      raw: true,
         }) as Promise<any[]>,
       ]);
 
@@ -1330,8 +1330,8 @@ export class ProviderAnalyticsService {
         createdAt:
           r.createdAt?.toISOString?.() ||
           (r.createdAt ? String(r.createdAt) : ""),
-      }));
-    }
+    }));
+  }
 
     const reviewCount =
       ratingDistribution[1] +
@@ -1473,7 +1473,7 @@ export class ProviderAnalyticsService {
         ? ((await Service.findAll({
             where: { id: { [Op.in]: serviceIds } },
             attributes: ["id", "name"],
-            raw: true,
+      raw: true,
           })) as any[])
         : [];
     const serviceMap = new Map(services.map((s) => [s.id, s.name]));
@@ -1498,7 +1498,7 @@ export class ProviderAnalyticsService {
       const memberKey = a.assignedTeamMemberId
         ? String(a.assignedTeamMemberId)
         : "owner";
-      return {
+    return {
         id: a.id,
         dateTime: a.dateTime?.toISOString?.() || String(a.dateTime),
         status: a.status,
@@ -1711,8 +1711,8 @@ export class ProviderAnalyticsService {
     teamMemberId: string | null
   ): Promise<number | null> {
     const appts = await Appointment.findAll({
-      where: {
-        marketplaceId,
+        where: {
+          marketplaceId,
         ...(teamMemberId
           ? { assignedTeamMemberId: teamMemberId }
           : { assignedTeamMemberId: null }),
@@ -1748,14 +1748,14 @@ export class ProviderAnalyticsService {
     };
     const appointments = (await Appointment.findAll({
       where: where as any,
-      attributes: [
+        attributes: [
         [Sequelize.fn("DATE", Sequelize.col("dateTime")), "date"],
         [Sequelize.fn("SUM", Sequelize.col("price")), "revenue"],
         [Sequelize.fn("COUNT", Sequelize.col("id")), "bookings"],
-      ],
+        ],
       group: [Sequelize.fn("DATE", Sequelize.col("dateTime"))],
       order: [[Sequelize.fn("DATE", Sequelize.col("dateTime")), "ASC"]],
-      raw: true,
+        raw: true,
     })) as any[];
 
     return appointments.map((apt) => ({
@@ -1958,14 +1958,14 @@ export class ProviderAnalyticsService {
     const oneTimeClientIds: string[] = [];
     if (clientIds.length > 0) {
       const counts = (await Appointment.findAll({
-        where: {
-          marketplaceId,
+      where: {
+        marketplaceId,
           userId: { [Op.in]: clientIds },
           status: COMPLETED,
         },
         attributes: ["userId", [Sequelize.fn("COUNT", Sequelize.col("id")), "cnt"]],
         group: ["userId"],
-        raw: true,
+      raw: true,
       })) as any[];
       for (const row of counts) {
         const count = parseInt(row.cnt || "0", 10);
