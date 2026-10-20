@@ -413,6 +413,7 @@ export const updateTeamMemberPermissions = async (req: any, res: Response): Prom
       "viewReviews",
       "manageRedeemCodes",
       "manageServices",
+      "manageBookingWindow",
     ];
 
     const updateData: any = {};
@@ -521,6 +522,7 @@ export const getMyPermissions = async (req: any, res: Response): Promise<Respons
           viewReviews: false,
           manageRedeemCodes: false,
           manageServices: false,
+          manageBookingWindow: false,
         },
       });
     }

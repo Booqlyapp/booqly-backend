@@ -12,6 +12,7 @@ import { ReferralService } from "../services/referral.service";
 import { localFileStorage } from "../utils/local-storage";
 import { ALLOWED_MIMETYPES, MAX_FILE_SIZE, MAX_IMAGES } from "../utils/multer-config";
 import { Op, Sequelize } from "sequelize";
+import { getTeamMemberPermissionsForUser } from "../utils/team_member_permission_helper";
 
 // Interfaces for type safety
 interface CreateServiceData {
@@ -2088,10 +2089,14 @@ export const updateBookingWindowSettings = async (
     }
 
     if (user.isTeamMember) {
-      return res.status(403).json({
-        status: false,
-        message: "Only solo providers and suite owners can update the booking window.",
-      });
+      const permissions = await getTeamMemberPermissionsForUser(user);
+      if (!permissions?.manageBookingWindow) {
+        return res.status(403).json({
+          status: false,
+          message:
+            "You do not have permission to update the suite booking window.",
+        });
+      }
     }
 
     if (typeof bookingWindowLimited !== "boolean") {

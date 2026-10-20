@@ -28,6 +28,7 @@ interface TeamMemberPermissionAttributes {
   viewReviews: boolean;
   manageRedeemCodes: boolean;
   manageServices: boolean;
+  manageBookingWindow: boolean;
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
 }
@@ -55,6 +56,7 @@ export class TeamMemberPermission
   declare viewReviews: CreationOptional<boolean>;
   declare manageRedeemCodes: CreationOptional<boolean>;
   declare manageServices: CreationOptional<boolean>;
+  declare manageBookingWindow: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -165,6 +167,11 @@ export default function initTeamMemberPermission(sequelize: Sequelize) {
         defaultValue: false,
       },
       manageServices: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+      },
+      manageBookingWindow: {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
