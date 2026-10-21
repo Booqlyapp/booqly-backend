@@ -43,6 +43,7 @@ import AdminSupportRoute from "./admin_support_route";
 import SupportRoute from "./support_route";
 import ContentReportRoute from "./content_report_route";
 import StripeConnectRoute from "./stripe_connect_route";
+import PortfolioCollectionRoute from "./portfolio_collection_route";
 
 const router = Router();
 
@@ -77,6 +78,7 @@ router.use("/", PromoBookingRoute); // For promo booking data endpoint
 router.use("/", AssetlinksRoute); // For Android App Links verification
 router.use("/friends", FriendRoute);
 router.use("/favorites", FavoriteRoute);
+router.use("/portfolio-collections", PortfolioCollectionRoute);
 router.use("/videos", VideoRoute);
 router.use("/public", ExternalAppointmentRoute); // Public booking endpoints
 router.use("/blocked-times", BlockedTimeRoute);

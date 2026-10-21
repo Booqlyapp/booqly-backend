@@ -38,8 +38,17 @@ import initSupportTicket, { SupportTicket } from "./support_ticket_model";
 import initSupportTicketMessage, {
   SupportTicketMessage,
 } from "./support_ticket_message_model";
+import initPortfolioCollection, {
+  PortfolioCollection,
+} from "./portfolio_collection_model";
+import initPortfolioCollectionItem, {
+  PortfolioCollectionItem,
+} from "./portfolio_collection_item_model";
+import initPortfolioCollectionMember, {
+  PortfolioCollectionMember,
+} from "./portfolio_collection_member_model";
 
-export { Category, Subcategory, Promotion, ServiceAddOn, Friend, ExternalAppointment, BlockedTime, Waitlist, Video, VideoLike, VideoComment, VideoCommentReaction, VideoFollow, TeamMemberPermission, ContentReport, Announcement, SupportTicket, SupportTicketMessage };
+export { Category, Subcategory, Promotion, ServiceAddOn, Friend, ExternalAppointment, BlockedTime, Waitlist, Video, VideoLike, VideoComment, VideoCommentReaction, VideoFollow, TeamMemberPermission, ContentReport, Announcement, SupportTicket, SupportTicketMessage, PortfolioCollection, PortfolioCollectionItem, PortfolioCollectionMember };
 
 export function initModels(sequelize: Sequelize) {
   initUser(sequelize);
@@ -77,6 +86,9 @@ export function initModels(sequelize: Sequelize) {
   initAnnouncement(sequelize);
   initSupportTicket(sequelize);
   initSupportTicketMessage(sequelize);
+  initPortfolioCollection(sequelize);
+  initPortfolioCollectionItem(sequelize);
+  initPortfolioCollectionMember(sequelize);
 
   // User self-referencing relationship for referrals
   User.belongsTo(User, {
@@ -684,6 +696,52 @@ export function initModels(sequelize: Sequelize) {
     as: "createdBy",
   });
 
+  // Portfolio collection relationships
+  User.hasMany(PortfolioCollection, {
+    foreignKey: "ownerUserId",
+    as: "portfolioCollections",
+  });
+  PortfolioCollection.belongsTo(User, {
+    foreignKey: "ownerUserId",
+    as: "owner",
+  });
+  PortfolioCollection.hasMany(PortfolioCollectionItem, {
+    foreignKey: "collectionId",
+    as: "items",
+  });
+  PortfolioCollectionItem.belongsTo(PortfolioCollection, {
+    foreignKey: "collectionId",
+    as: "collection",
+  });
+  PortfolioCollectionItem.belongsTo(User, {
+    foreignKey: "ownerUserId",
+    as: "owner",
+  });
+  PortfolioCollectionItem.belongsTo(Marketplace, {
+    foreignKey: "marketplaceId",
+    as: "marketplace",
+  });
+  PortfolioCollectionItem.belongsTo(Video, {
+    foreignKey: "videoId",
+    as: "video",
+  });
+  PortfolioCollection.hasMany(PortfolioCollectionMember, {
+    foreignKey: "collectionId",
+    as: "members",
+  });
+  PortfolioCollectionMember.belongsTo(PortfolioCollection, {
+    foreignKey: "collectionId",
+    as: "collection",
+  });
+  PortfolioCollectionMember.belongsTo(User, {
+    foreignKey: "userId",
+    as: "memberUser",
+  });
+  User.hasMany(PortfolioCollectionMember, {
+    foreignKey: "userId",
+    as: "portfolioCollectionMemberships",
+  });
+
   return {
     User,
     Marketplace,
@@ -719,5 +777,8 @@ export function initModels(sequelize: Sequelize) {
     Announcement,
     SupportTicket,
     SupportTicketMessage,
+    PortfolioCollection,
+    PortfolioCollectionItem,
+    PortfolioCollectionMember,
   };
 }
