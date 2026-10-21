@@ -57,6 +57,43 @@ export class WaitlistService {
     return Math.min(30, Math.max(15, marketplace.waitlistClaimWindowMinutes));
   }
 
+  /** True when the slot falls inside a provider Block Time. */
+  static async isSlotBlocked(
+    marketplaceId: string,
+    dateTime: Date
+  ): Promise<boolean> {
+    const { start, end } = this.getMinuteWindow(dateTime);
+    const blockedTimes = await BlockedTime.findAll({
+      where: { marketplaceId },
+      attributes: ["startDateTime", "endDateTime", "frequency"],
+    });
+
+    const slotMinutes = dateTime.getHours() * 60 + dateTime.getMinutes();
+    for (const block of blockedTimes) {
+      if (block.frequency === "one_time") {
+        if (block.startDateTime <= end && block.endDateTime >= start) {
+          return true;
+        }
+      } else if (block.frequency === "daily") {
+        const blockDayStart = new Date(block.startDateTime);
+        blockDayStart.setHours(0, 0, 0, 0);
+        const slotDayStart = new Date(dateTime);
+        slotDayStart.setHours(0, 0, 0, 0);
+        if (slotDayStart < blockDayStart) continue;
+
+        const startMinutes =
+          block.startDateTime.getHours() * 60 +
+          block.startDateTime.getMinutes();
+        const endMinutes =
+          block.endDateTime.getHours() * 60 + block.endDateTime.getMinutes();
+        if (slotMinutes >= startMinutes && slotMinutes < endMinutes) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   static async isSlotOccupied(
     marketplaceId: string,
     dateTime: Date,
@@ -71,6 +108,8 @@ export class WaitlistService {
       assignedTeamMemberId?: string | null;
       /** When true, skip external appointment occupancy (suite per-member checks). */
       ignoreExternalAppointments?: boolean;
+      /** When true, skip Block Time checks (use isSlotBlocked separately). */
+      ignoreBlockedTimes?: boolean;
     }
   ): Promise<boolean> {
     const { start, end } = this.getMinuteWindow(dateTime);
@@ -94,7 +133,7 @@ export class WaitlistService {
       Boolean(options?.ignoreAppointments) ||
       Boolean(options?.ignoreExternalAppointments);
 
-    const [appointmentCount, externalCount, blockedTimes] = await Promise.all([
+    const [appointmentCount, externalCount] = await Promise.all([
       options?.ignoreAppointments
         ? Promise.resolve(0)
         : Appointment.count({ where: appointmentWhere }),
@@ -107,40 +146,12 @@ export class WaitlistService {
               dateTime: { [Op.between]: [start, end] },
             },
           }),
-      BlockedTime.findAll({
-        where: { marketplaceId },
-        attributes: ["startDateTime", "endDateTime", "frequency"],
-      }),
     ]);
 
     if (appointmentCount + externalCount > 0) return true;
 
-    const slotMinutes = dateTime.getHours() * 60 + dateTime.getMinutes();
-    for (const block of blockedTimes) {
-      if (block.frequency === "one_time") {
-        if (block.startDateTime <= end && block.endDateTime >= start) {
-          return true;
-        }
-      } else if (block.frequency === "daily") {
-        // Daily blocks apply from the original start date onward, same clock times.
-        const blockDayStart = new Date(block.startDateTime);
-        blockDayStart.setHours(0, 0, 0, 0);
-        const slotDayStart = new Date(dateTime);
-        slotDayStart.setHours(0, 0, 0, 0);
-        if (slotDayStart < blockDayStart) continue;
-
-        const startMinutes =
-          block.startDateTime.getHours() * 60 +
-          block.startDateTime.getMinutes();
-        const endMinutes =
-          block.endDateTime.getHours() * 60 + block.endDateTime.getMinutes();
-        if (slotMinutes >= startMinutes && slotMinutes < endMinutes) {
-          return true;
-        }
-      }
-    }
-
-    return false;
+    if (options?.ignoreBlockedTimes) return false;
+    return this.isSlotBlocked(marketplaceId, dateTime);
   }
 
   static async getMarketplaceSettings(marketplaceId: string): Promise<{ waitlistEnabled: boolean; claimWindowMinutes: number }> {

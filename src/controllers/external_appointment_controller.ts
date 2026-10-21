@@ -11,6 +11,7 @@ import { User } from "../models/user_model";
 import { StripeService } from "../services/stripe.service";
 import { WaitlistService } from "../services/waitlist.service";
 import { BookingWindowService } from "../services/booking_window.service";
+import { ScheduleAvailabilityService } from "../services/schedule_availability.service";
 import Stripe from 'stripe';
 import sequelize from "../config/database";
 import {
@@ -93,11 +94,41 @@ export const createExternalAppointment = async (
       });
     }
 
-    const slotOccupied = await WaitlistService.isSlotOccupied(marketplaceId, bookingDateTime);
+    const scheduleCheck = await ScheduleAvailabilityService.assertOpenAt(
+      marketplaceId,
+      bookingDateTime
+    );
+    if (!scheduleCheck.allowed) {
+      await transaction.rollback();
+      return res.status(403).json({
+        status: false,
+        reason: scheduleCheck.reason,
+        message:
+          scheduleCheck.message ||
+          "This date or time is unavailable on the provider's schedule.",
+      });
+    }
+
+    if (await WaitlistService.isSlotBlocked(marketplaceId, bookingDateTime)) {
+      await transaction.rollback();
+      return res.status(409).json({
+        status: false,
+        reason: "blocked",
+        message:
+          "This time is blocked by the provider and is unavailable for booking. Please choose another time.",
+      });
+    }
+
+    const slotOccupied = await WaitlistService.isSlotOccupied(
+      marketplaceId,
+      bookingDateTime,
+      { ignoreBlockedTimes: true }
+    );
     if (slotOccupied) {
       await transaction.rollback();
       return res.status(409).json({
         status: false,
+        reason: "occupied",
         message: "This slot is fully booked.",
       });
     }
@@ -318,6 +349,103 @@ export const getMarketplaceByCustomLink = async (
   }
 };
 
+/**
+ * Public slot check for in-app client booking UI (Continue).
+ * Returns whether a date/time is bookable for closed/blocked/window reasons.
+ */
+export const checkSlotAvailability = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  try {
+    const { marketplaceId, dateTime } = req.query;
+
+    if (!marketplaceId || !dateTime) {
+      return res.status(400).json({
+        status: false,
+        message: "marketplaceId and dateTime are required",
+      });
+    }
+
+    const when = new Date(String(dateTime));
+    if (Number.isNaN(when.getTime())) {
+      return res.status(400).json({
+        status: false,
+        message: "dateTime must be a valid ISO date.",
+      });
+    }
+
+    const marketplace = await Marketplace.findOne({
+      where: { id: String(marketplaceId), deletedAt: null },
+    });
+    if (!marketplace) {
+      return res.status(404).json({
+        status: false,
+        message: "Marketplace not found",
+      });
+    }
+
+    const bookingWindowCheck =
+      await BookingWindowService.assertMarketplaceAllowsDate(
+        String(marketplaceId),
+        when
+      );
+    if (!bookingWindowCheck.allowed) {
+      return res.status(200).json({
+        status: true,
+        data: {
+          allowed: false,
+          reason: "booking_window",
+          message:
+            bookingWindowCheck.message ||
+            "This date is outside the provider's booking window.",
+        },
+      });
+    }
+
+    const scheduleCheck = await ScheduleAvailabilityService.assertOpenAt(
+      String(marketplaceId),
+      when
+    );
+    if (!scheduleCheck.allowed) {
+      return res.status(200).json({
+        status: true,
+        data: {
+          allowed: false,
+          reason: scheduleCheck.reason || "closed",
+          message:
+            scheduleCheck.message ||
+            "This date or time is unavailable on the provider's schedule.",
+        },
+      });
+    }
+
+    if (await WaitlistService.isSlotBlocked(String(marketplaceId), when)) {
+      return res.status(200).json({
+        status: true,
+        data: {
+          allowed: false,
+          reason: "blocked",
+          message:
+            "This time is blocked by the provider and is unavailable for booking. Please choose another time.",
+        },
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      data: { allowed: true },
+    });
+  } catch (error: any) {
+    console.error("Error checking slot availability:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to check slot availability",
+      error: error.message,
+    });
+  }
+};
+
 // Get available time slots for a service on a specific date
 export const getAvailableTimeSlots = async (
   req: Request,
@@ -440,10 +568,23 @@ export const getAvailableTimeSlots = async (
       new Date(date as string)
     );
 
+    // Remove slots that fall inside Block Time entries
+    const available: string[] = [];
+    for (const slot of timeSlots) {
+      const slotDate = new Date(date as string);
+      const { hour, minute } = parseTime(slot);
+      slotDate.setHours(hour, minute, 0, 0);
+      const blocked = await WaitlistService.isSlotBlocked(
+        marketplaceId as string,
+        slotDate
+      );
+      if (!blocked) available.push(slot);
+    }
+
     return res.status(200).json({
       status: true,
       message: "Available time slots retrieved successfully",
-      data: timeSlots,
+      data: available,
     });
   } catch (error: any) {
     console.error("Error fetching available time slots:", error);
@@ -648,10 +789,38 @@ export const createExternalAppointmentWithDeposit = async (
       });
     }
 
-    const slotOccupied = await WaitlistService.isSlotOccupied(marketplaceId, bookingDateTime);
+    const scheduleCheck = await ScheduleAvailabilityService.assertOpenAt(
+      marketplaceId,
+      bookingDateTime
+    );
+    if (!scheduleCheck.allowed) {
+      return res.status(403).json({
+        status: false,
+        reason: scheduleCheck.reason,
+        message:
+          scheduleCheck.message ||
+          "This date or time is unavailable on the provider's schedule.",
+      });
+    }
+
+    if (await WaitlistService.isSlotBlocked(marketplaceId, bookingDateTime)) {
+      return res.status(409).json({
+        status: false,
+        reason: "blocked",
+        message:
+          "This time is blocked by the provider and is unavailable for booking. Please choose another time.",
+      });
+    }
+
+    const slotOccupied = await WaitlistService.isSlotOccupied(
+      marketplaceId,
+      bookingDateTime,
+      { ignoreBlockedTimes: true }
+    );
     if (slotOccupied) {
       return res.status(409).json({
         status: false,
+        reason: "occupied",
         message: "This slot is fully booked.",
       });
     }

@@ -3,6 +3,7 @@ import {
   createExternalAppointment,
   getMarketplaceByCustomLink,
   getAvailableTimeSlots,
+  checkSlotAvailability,
   createExternalAppointmentWithDeposit,
   createDepositPaymentIntent,
   getExternalAppointments,
@@ -18,6 +19,7 @@ router.post("/book-with-deposit", createExternalAppointmentWithDeposit);
 router.post("/create-payment-intent", createDepositPaymentIntent);
 router.get("/marketplace/:customLink", getMarketplaceByCustomLink);
 router.get("/available-slots", getAvailableTimeSlots);
+router.get("/check-slot-availability", checkSlotAvailability);
 
 // Protected routes (authentication required)
 router.get("/external-appointments", authenticateToken, getExternalAppointments);
