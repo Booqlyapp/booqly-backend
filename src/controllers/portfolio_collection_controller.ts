@@ -312,6 +312,35 @@ async function findOrCreateAllSaved(userId: string) {
   return collection;
 }
 
+function itemMatchWhere(
+  userId: string,
+  collectionId: string,
+  body: any
+): Record<string, unknown> | null {
+  const itemType = body.itemType as string;
+  if (itemType === "portfolio_image") {
+    const imageUrl = String(body.imageUrl || "").trim();
+    if (!imageUrl) return null;
+    return {
+      collectionId,
+      ownerUserId: userId,
+      itemType: "portfolio_image",
+      imageUrl,
+    };
+  }
+  if (itemType === "reel") {
+    const videoId = String(body.videoId || "").trim();
+    if (!videoId) return null;
+    return {
+      collectionId,
+      ownerUserId: userId,
+      itemType: "reel",
+      videoId,
+    };
+  }
+  return null;
+}
+
 export const saveItem = async (req: AuthRequest, res: Response) => {
   try {
     const userId = requireUser(req, res);
@@ -339,10 +368,33 @@ export const saveItem = async (req: AuthRequest, res: Response) => {
       collection = access.collection;
     }
 
+    // Instagram-style toggle: already in this collection → remove (all dupes), else save
+    const matchWhere = itemMatchWhere(userId, collection.id, req.body);
+    if (!matchWhere) {
+      return res.status(400).json({
+        status: false,
+        message: "itemType and imageUrl or videoId required",
+      });
+    }
+
+    const existingCount = await PortfolioCollectionItem.count({
+      where: matchWhere,
+    });
+    if (existingCount > 0) {
+      await PortfolioCollectionItem.destroy({ where: matchWhere });
+      return res.status(200).json({
+        status: true,
+        message: "Removed from collection",
+        removed: true,
+        data: null,
+      });
+    }
+
     const item = await saveItemInternal(userId, collection.id, req.body);
     return res.status(200).json({
       status: true,
       message: "Saved to collection",
+      removed: false,
       data: item,
     });
   } catch (error: any) {
