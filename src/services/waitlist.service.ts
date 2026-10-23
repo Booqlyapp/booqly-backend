@@ -57,17 +57,19 @@ export class WaitlistService {
     return Math.min(30, Math.max(15, marketplace.waitlistClaimWindowMinutes));
   }
 
-  /** True when the slot falls inside a provider Block Time. */
-  static async isSlotBlocked(
-    marketplaceId: string,
+  /**
+   * In-memory Block Time check (same rules as isSlotBlocked).
+   * Used when blocks are already loaded (e.g. bookable-dates scan).
+   */
+  static isDateTimeBlockedByEntries(
+    blockedTimes: Array<{
+      startDateTime: Date;
+      endDateTime: Date;
+      frequency: string;
+    }>,
     dateTime: Date
-  ): Promise<boolean> {
+  ): boolean {
     const { start, end } = this.getMinuteWindow(dateTime);
-    const blockedTimes = await BlockedTime.findAll({
-      where: { marketplaceId },
-      attributes: ["startDateTime", "endDateTime", "frequency"],
-    });
-
     const slotMinutes = dateTime.getHours() * 60 + dateTime.getMinutes();
     for (const block of blockedTimes) {
       if (block.frequency === "one_time") {
@@ -92,6 +94,18 @@ export class WaitlistService {
       }
     }
     return false;
+  }
+
+  /** True when the slot falls inside a provider Block Time. */
+  static async isSlotBlocked(
+    marketplaceId: string,
+    dateTime: Date
+  ): Promise<boolean> {
+    const blockedTimes = await BlockedTime.findAll({
+      where: { marketplaceId },
+      attributes: ["startDateTime", "endDateTime", "frequency"],
+    });
+    return this.isDateTimeBlockedByEntries(blockedTimes, dateTime);
   }
 
   static async isSlotOccupied(

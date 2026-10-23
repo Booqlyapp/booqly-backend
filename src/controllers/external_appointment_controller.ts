@@ -353,6 +353,75 @@ export const getMarketplaceByCustomLink = async (
  * Public slot check for in-app client booking UI (Continue).
  * Returns whether a date/time is bookable for closed/blocked/window reasons.
  */
+/**
+ * Public: calendar days clients may show in Select Date (schedule + booking window + Block Time).
+ * Query: marketplaceId, from=YYYY-MM-DD, to=YYYY-MM-DD
+ */
+export const getBookableDates = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  try {
+    const { marketplaceId, from, to } = req.query;
+
+    if (!marketplaceId || !from || !to) {
+      return res.status(400).json({
+        status: false,
+        message: "marketplaceId, from, and to are required (from/to as YYYY-MM-DD).",
+      });
+    }
+
+    const fromStr = String(from).trim().slice(0, 10);
+    const toStr = String(to).trim().slice(0, 10);
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(fromStr) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(toStr)
+    ) {
+      return res.status(400).json({
+        status: false,
+        message: "from and to must be YYYY-MM-DD dates.",
+      });
+    }
+
+    if (fromStr > toStr) {
+      return res.status(400).json({
+        status: false,
+        message: "from must be on or before to.",
+      });
+    }
+
+    const marketplace = await Marketplace.findOne({
+      where: { id: String(marketplaceId), deletedAt: null },
+      attributes: ["id"],
+    });
+    if (!marketplace) {
+      return res.status(404).json({
+        status: false,
+        message: "Marketplace not found",
+      });
+    }
+
+    const dates = await ScheduleAvailabilityService.listBookableDates(
+      String(marketplaceId),
+      fromStr,
+      toStr
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Bookable dates retrieved successfully",
+      data: { dates },
+    });
+  } catch (error: any) {
+    console.error("Error fetching bookable dates:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch bookable dates",
+      error: error.message,
+    });
+  }
+};
+
 export const checkSlotAvailability = async (
   req: Request,
   res: Response
@@ -649,8 +718,17 @@ function generateTimeSlots(
   }
   
   // Handle string format: "closed" or "9:00 AM - 5:00 PM"
-  const dayScheduleStr = typeof daySchedule === 'string' ? daySchedule : `${daySchedule.startTime} - ${daySchedule.endTime}`;
-  
+  const rawScheduleStr =
+    typeof daySchedule === "string"
+      ? daySchedule
+      : `${daySchedule.startTime} - ${daySchedule.endTime}`;
+  const dayScheduleStr = rawScheduleStr
+    .replace(/\u00a0/g, " ")
+    .replace(/\u202f/g, " ")
+    .replace(/[–—−]/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+
   if (dayScheduleStr.toLowerCase() === "closed") {
     return slots;
   }
