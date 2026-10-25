@@ -60,14 +60,33 @@ function parseOpenCloseMinutes(
   dayStr: string
 ): { openMinutes: number; closeMinutes: number } | null {
   const normalized = normalizeScheduleText(dayStr);
-  const match = normalized.match(
+
+  // "9:00 AM - 5:00 PM"
+  const ampm = normalized.match(
     /^(\d{1,2}:\d{2}\s*(?:AM|PM))\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM))$/i
   );
-  if (!match) return null;
-  const openMinutes = parseTimeToMinutes(match[1]);
-  const closeMinutes = parseTimeToMinutes(match[2]);
-  if (openMinutes == null || closeMinutes == null) return null;
-  return { openMinutes, closeMinutes };
+  if (ampm) {
+    const openMinutes = parseTimeToMinutes(ampm[1]);
+    const closeMinutes = parseTimeToMinutes(ampm[2]);
+    if (openMinutes == null || closeMinutes == null) return null;
+    return { openMinutes, closeMinutes };
+  }
+
+  // "09:00-17:00" / "9:00 - 17:00" (stored by some clients / seed data)
+  const h24 = normalized.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+  if (h24) {
+    const openH = parseInt(h24[1], 10);
+    const openM = parseInt(h24[2], 10);
+    const closeH = parseInt(h24[3], 10);
+    const closeM = parseInt(h24[4], 10);
+    if (openH > 23 || closeH > 23 || openM > 59 || closeM > 59) return null;
+    return {
+      openMinutes: openH * 60 + openM,
+      closeMinutes: closeH * 60 + closeM,
+    };
+  }
+
+  return null;
 }
 
 /**

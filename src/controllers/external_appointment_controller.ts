@@ -733,20 +733,33 @@ function generateTimeSlots(
     return slots;
   }
 
-  // Parse schedule string format: "9:00 AM - 7:00 PM"
-  const scheduleMatch = dayScheduleStr.match(/^(\d{1,2}:\d{2}\s*(?:AM|PM))\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM))$/i);
-  
-  if (!scheduleMatch) {
-    console.error(`Invalid schedule format for ${dayMap[dayOfWeek]}: ${dayScheduleStr}`);
-    return slots;
+  // "9:00 AM - 7:00 PM" or "09:00-17:00"
+  let startHour: number;
+  let startMinute: number;
+  let endHour: number;
+  let endMinute: number;
+
+  const ampmMatch = dayScheduleStr.match(
+    /^(\d{1,2}:\d{2}\s*(?:AM|PM))\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM))$/i
+  );
+  if (ampmMatch) {
+    ({ hour: startHour, minute: startMinute } = parseTime(ampmMatch[1]));
+    ({ hour: endHour, minute: endMinute } = parseTime(ampmMatch[2]));
+  } else {
+    const h24Match = dayScheduleStr.match(
+      /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/
+    );
+    if (!h24Match) {
+      console.error(
+        `Invalid schedule format for ${dayMap[dayOfWeek]}: ${dayScheduleStr}`
+      );
+      return slots;
+    }
+    startHour = parseInt(h24Match[1], 10);
+    startMinute = parseInt(h24Match[2], 10);
+    endHour = parseInt(h24Match[3], 10);
+    endMinute = parseInt(h24Match[4], 10);
   }
-
-  const startTimeStr = scheduleMatch[1];
-  const endTimeStr = scheduleMatch[2];
-
-  // Parse start and end times
-  const { hour: startHour, minute: startMinute } = parseTime(startTimeStr);
-  const { hour: endHour, minute: endMinute } = parseTime(endTimeStr);
 
   let currentTime = new Date(date);
   currentTime.setHours(startHour, startMinute, 0, 0);
