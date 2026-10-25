@@ -554,6 +554,14 @@ export const listItems = async (req: AuthRequest, res: Response) => {
           model: Video,
           as: "video",
           required: false,
+          include: [
+            {
+              model: User,
+              as: "owner",
+              attributes: ["id", "name", "profilePic", "role", "marketplaceId"],
+              required: false,
+            },
+          ],
         },
       ],
     });

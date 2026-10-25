@@ -1,8 +1,6 @@
-import { BlockedTime } from "../models/blocked_time_model";
 import { Marketplace } from "../models/marketplace_model";
 import { Schedule } from "../models/schedule_model";
 import { BookingWindowService } from "./booking_window.service";
-import { WaitlistService } from "./waitlist.service";
 
 export type ScheduleDenyReason = "closed" | "outside_hours" | "no_schedule";
 
@@ -133,9 +131,10 @@ export class ScheduleAvailabilityService {
   }
 
   /**
-   * Calendar days (YYYY-MM-DD) clients may offer in Select Date:
-   * inside booking window, open on weekly schedule, and not fully covered by Block Time.
-   * Wall-clock day/hour matching assertOpenAt / isSlotBlocked.
+   * Calendar days (YYYY-MM-DD) for Select Date — same rules as booking Continuity:
+   * booking window + weekly schedule closed days only.
+   * Block Time closes specific clock times (assertOpenAt / isSlotBlocked on Continue),
+   * not entire calendar days — a 12:30–1:30 block must still leave that day selectable.
    */
   static async listBookableDates(
     marketplaceId: string,
@@ -155,21 +154,15 @@ export class ScheduleAvailabilityService {
     const windowSettings = await BookingWindowService.getMarketplaceSettings(
       marketplaceId
     );
-    const blockedTimes = await BlockedTime.findAll({
-      where: { marketplaceId },
-      attributes: ["startDateTime", "endDateTime", "frequency"],
-    });
 
     const dates: string[] = [];
     let cursor = new Date(from.y, from.m - 1, from.d);
     const last = new Date(to.y, to.m - 1, to.d);
-    // Hard cap so a bad range cannot burn the event loop.
     const maxDays = 366;
     let scanned = 0;
 
     while (cursor.getTime() <= last.getTime() && scanned < maxDays) {
       scanned += 1;
-      const dateOnly = formatDateOnly(cursor);
 
       const windowCheck = BookingWindowService.assertWithinWindow(
         windowSettings,
@@ -180,45 +173,16 @@ export class ScheduleAvailabilityService {
         continue;
       }
 
-      let openMinutes = 9 * 60;
-      let closeMinutes = 20 * 60;
+      // Same closed-day rule as assertOpenAt (wall-clock local day).
       if (schedule) {
         const dayStr = dayScheduleString(schedule, cursor);
         if (!dayStr || dayStr.toLowerCase() === "closed") {
           cursor = addCalendarDays(cursor, 1);
           continue;
         }
-        const hours = parseOpenCloseMinutes(dayStr);
-        if (!hours || hours.closeMinutes <= hours.openMinutes) {
-          cursor = addCalendarDays(cursor, 1);
-          continue;
-        }
-        openMinutes = hours.openMinutes;
-        closeMinutes = hours.closeMinutes;
       }
 
-      let hasOpenSlot = false;
-      for (let m = openMinutes; m < closeMinutes; m += 60) {
-        const slot = new Date(
-          cursor.getFullYear(),
-          cursor.getMonth(),
-          cursor.getDate(),
-          Math.floor(m / 60),
-          m % 60,
-          0,
-          0
-        );
-        if (
-          !WaitlistService.isDateTimeBlockedByEntries(blockedTimes, slot)
-        ) {
-          hasOpenSlot = true;
-          break;
-        }
-      }
-
-      if (hasOpenSlot) {
-        dates.push(dateOnly);
-      }
+      dates.push(formatDateOnly(cursor));
       cursor = addCalendarDays(cursor, 1);
     }
 
