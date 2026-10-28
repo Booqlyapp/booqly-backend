@@ -13,6 +13,7 @@ import { localFileStorage } from "../utils/local-storage";
 import { ALLOWED_MIMETYPES, MAX_FILE_SIZE, MAX_IMAGES } from "../utils/multer-config";
 import { Op, Sequelize } from "sequelize";
 import { getTeamMemberPermissionsForUser } from "../utils/team_member_permission_helper";
+import { allocateUniqueCustomLink } from "../utils/marketplace-custom-link";
 
 // Interfaces for type safety
 interface CreateServiceData {
@@ -440,6 +441,8 @@ export const createMarketplaceForUser = async (
       }
     }
 
+    const customLink = await allocateUniqueCustomLink(businessName);
+
     const newMarketplace = await Marketplace.create({
       businessName,
       phoneNumber,
@@ -450,6 +453,7 @@ export const createMarketplaceForUser = async (
       bio,
       policyRules,
       showPolicyRules: false,
+      customLink,
       scheduleId: newSchedule.id,
       imagesList: imageUrls.length > 0 ? imageUrls : null,
       portfolioImages: null,
