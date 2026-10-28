@@ -4,6 +4,7 @@ import { BlockedTime } from "../models/blocked_time_model";
 import { Marketplace } from "../models/marketplace_model";
 import { User } from "../models/user_model";
 import { AuthRequest } from "../middlewares/auth.middleware";
+import { parseBookingDateTime } from "../utils/booking_datetime";
 
 function mapFrequency(raw: unknown): "one_time" | "daily" | null {
   if (typeof raw !== "string") return null;
@@ -67,8 +68,8 @@ export const createBlockedTime = async (
       });
     }
 
-    const start = new Date(startDateTime);
-    const end = new Date(endDateTime);
+    const start = parseBookingDateTime(startDateTime);
+    const end = parseBookingDateTime(endDateTime);
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || end <= start) {
       return res.status(400).json({
         status: false,

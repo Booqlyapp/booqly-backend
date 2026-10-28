@@ -18,6 +18,7 @@ import {
   getBookingScope,
   getTeamMemberPermissionsForUser,
 } from "../utils/team_member_permission_helper";
+import { parseBookingDateTime } from "../utils/booking_datetime";
 
 interface GetExternalAppointmentsQuery {
   marketplaceId: string;
@@ -70,7 +71,7 @@ export const createExternalAppointment = async (
       });
     }
 
-    const bookingDateTime = new Date(dateTime);
+    const bookingDateTime = parseBookingDateTime(dateTime);
     if (Number.isNaN(bookingDateTime.getTime())) {
       await transaction.rollback();
       return res.status(400).json({
@@ -436,7 +437,7 @@ export const checkSlotAvailability = async (
       });
     }
 
-    const when = new Date(String(dateTime));
+    const when = parseBookingDateTime(String(dateTime));
     if (Number.isNaN(when.getTime())) {
       return res.status(400).json({
         status: false,
@@ -858,7 +859,7 @@ export const createExternalAppointmentWithDeposit = async (
       });
     }
 
-    const bookingDateTime = new Date(dateTime);
+    const bookingDateTime = parseBookingDateTime(dateTime);
     if (Number.isNaN(bookingDateTime.getTime())) {
       return res.status(400).json({
         status: false,

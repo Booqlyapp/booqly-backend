@@ -15,6 +15,7 @@ import {
   getBookingScope,
   getTeamMemberPermissionsForUser,
 } from "../utils/team_member_permission_helper";
+import { parseBookingDateTime } from "../utils/booking_datetime";
 
 interface CreateAppointmentData {
   marketplaceId: string;
@@ -105,8 +106,8 @@ export const createAppointment = async (
       });
     }
 
-    // Validate dateTime is in the future
-    const appointmentDate = new Date(dateTime);
+    // Validate dateTime is in the future (wall-clock digits, not TZ-shifted)
+    const appointmentDate = parseBookingDateTime(dateTime);
     if (isNaN(appointmentDate.getTime()) || appointmentDate <= new Date()) {
       await transaction?.rollback();
       return res.status(200).json({
@@ -481,7 +482,7 @@ export const createProviderAppointment = async (
       });
     }
 
-    const appointmentDate = new Date(dateTime);
+    const appointmentDate = parseBookingDateTime(dateTime);
     if (isNaN(appointmentDate.getTime()) || appointmentDate <= new Date()) {
       await transaction?.rollback();
       return res.status(400).json({
@@ -1076,8 +1077,8 @@ export const updateAppointmentDateTime = async (
       });
     }
 
-    // Validate new dateTime is in the future
-    const newAppointmentDate = new Date(dateTime);
+    // Validate new dateTime is in the future (wall-clock digits, not TZ-shifted)
+    const newAppointmentDate = parseBookingDateTime(dateTime);
     if (
       isNaN(newAppointmentDate.getTime()) ||
       newAppointmentDate <= new Date()
