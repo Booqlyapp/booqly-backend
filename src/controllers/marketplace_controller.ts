@@ -2281,6 +2281,116 @@ export const updateBookingPageCustomization = async (
   }
 };
 
+const HEX_COLOR_RE = /^#[0-9A-Fa-f]{6}$/;
+
+function parseRequiredHex(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!HEX_COLOR_RE.test(trimmed)) return null;
+  return trimmed.toUpperCase();
+}
+
+/**
+ * Update public booking page theme colors (background, text, buttons).
+ */
+export const updateBookingPageColors = async (
+  req: any,
+  res: Response
+): Promise<Response> => {
+  try {
+    const { marketplaceId, bookingPageColors } = req.body;
+
+    if (!marketplaceId) {
+      return res.status(400).json({
+        status: false,
+        message: "marketplaceId is required",
+      });
+    }
+
+    if (
+      !bookingPageColors ||
+      typeof bookingPageColors !== "object" ||
+      Array.isArray(bookingPageColors)
+    ) {
+      return res.status(400).json({
+        status: false,
+        message: "bookingPageColors object is required",
+      });
+    }
+
+    const user = req.user;
+    if (user.marketplaceId !== marketplaceId) {
+      return res.status(403).json({
+        status: false,
+        message: "You can only update your own marketplace.",
+      });
+    }
+
+    const pageBackground = parseRequiredHex(bookingPageColors.pageBackground);
+    const text = parseRequiredHex(bookingPageColors.text);
+    const buttons = parseRequiredHex(bookingPageColors.buttons);
+
+    if (!pageBackground || !text || !buttons) {
+      return res.status(400).json({
+        status: false,
+        message:
+          "pageBackground, text, and buttons are required as #RRGGBB colors.",
+      });
+    }
+
+    let buttonText: string | null = null;
+    if (
+      bookingPageColors.buttonText !== null &&
+      bookingPageColors.buttonText !== undefined
+    ) {
+      const parsedButtonText = parseRequiredHex(bookingPageColors.buttonText);
+      if (!parsedButtonText) {
+        return res.status(400).json({
+          status: false,
+          message: "buttonText must be null (auto) or a valid #RRGGBB color.",
+        });
+      }
+      buttonText = parsedButtonText;
+    }
+
+    const colorsPayload = {
+      pageBackground,
+      text,
+      buttons,
+      buttonText,
+    };
+
+    const [updatedCount] = await Marketplace.update(
+      { bookingPageColors: colorsPayload },
+      { where: { id: marketplaceId, deletedAt: null } }
+    );
+
+    if (updatedCount === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "Marketplace not found or could not be updated.",
+      });
+    }
+
+    const updatedMarketplace = await Marketplace.findByPk(marketplaceId);
+
+    return res.status(200).json({
+      status: true,
+      message: "Booking page colors updated successfully",
+      data: updatedMarketplace,
+    });
+  } catch (error) {
+    console.error("Error updating booking page colors:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Internal server error",
+      ...(process.env.SEND_ERRORS === "true" && {
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
+    });
+  }
+};
+
 /**
  * Get marketplace by ID
  */

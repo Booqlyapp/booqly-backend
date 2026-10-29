@@ -26,6 +26,8 @@ interface MarketplaceAttributes {
   bookingPageSubtitle: string | null;
   bookingPageHeaderImage: string | null;
   bookingPageHeaderPdf: string | null;
+  /** Public booking page theme: pageBackground, text, buttons, buttonText (null = auto). */
+  bookingPageColors: Record<string, string | null> | null;
   waitlistEnabled: boolean;
   waitlistClaimWindowMinutes: number;
   /** When true, clients may only book within bookingWindowFrom..Until. */
@@ -69,6 +71,7 @@ export class Marketplace
   declare bookingPageSubtitle: string | null;
   declare bookingPageHeaderImage: string | null;
   declare bookingPageHeaderPdf: string | null;
+  declare bookingPageColors: CreationOptional<Record<string, string | null> | null>;
   declare waitlistEnabled: CreationOptional<boolean>;
   declare waitlistClaimWindowMinutes: CreationOptional<number>;
   declare bookingWindowLimited: CreationOptional<boolean>;
@@ -174,6 +177,11 @@ export default function initMarketplace(sequelize: Sequelize) {
       bookingPageHeaderPdf: {
         type: DataTypes.STRING,
         allowNull: true,
+      },
+      bookingPageColors: {
+        type: DataTypes.JSONB,
+        allowNull: true,
+        defaultValue: null,
       },
       waitlistEnabled: {
         type: DataTypes.BOOLEAN,

@@ -14,6 +14,7 @@ import {
   updateWaitlistSettings,
   updateBookingWindowSettings,
   updateBookingPageCustomization,
+  updateBookingPageColors,
 } from "../controllers/marketplace_controller";
 import { updateMarketplaceSocials } from "../controllers/social_controller";
 import { authenticateToken, requireRole, requireVerification, optionalAuth } from "../middlewares/auth.middleware";
@@ -57,6 +58,13 @@ router.post(
     { name: 'headerPdf', maxCount: 1 }
   ]),
   updateBookingPageCustomization
+);
+router.put(
+  "/update-booking-page-colors",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  requireVerification,
+  updateBookingPageColors
 );
 router.put("/update-marketplace-socials", authenticateToken, requireVerification, updateMarketplaceSocials);
 router.post(
