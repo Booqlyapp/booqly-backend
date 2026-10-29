@@ -664,7 +664,7 @@ export const getAvailableTimeSlots = async (
       });
     }
 
-    const serviceDuration = typeof service.duration === 'string' ? parseInt(service.duration) : (service.duration || 60);
+    const serviceDuration = parseDurationMinutes(service.duration);
 
     // Get existing appointments for the date (both external and regular appointments)
     const startOfDay = new Date(date as string);
@@ -742,6 +742,24 @@ export const getAvailableTimeSlots = async (
     });
   }
 };
+
+/** Parse service duration like "1hr", "2 hours", "90 min", or bare minutes. */
+function parseDurationMinutes(
+  duration: string | number | null | undefined
+): number {
+  if (duration == null || duration === "") return 60;
+  if (typeof duration === "number" && !Number.isNaN(duration) && duration > 0) {
+    return duration;
+  }
+  const raw = String(duration).trim().toLowerCase();
+  const hourMatch = raw.match(/^(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours)\b/);
+  if (hourMatch) return Math.round(parseFloat(hourMatch[1]) * 60);
+  const minMatch = raw.match(/^(\d+(?:\.\d+)?)\s*(m|min|mins|minute|minutes)\b/);
+  if (minMatch) return Math.round(parseFloat(minMatch[1]));
+  const n = parseInt(raw, 10);
+  if (!Number.isNaN(n) && n > 0) return n;
+  return 60;
+}
 
 // Helper function to parse time string (e.g., "9:00 AM" to 24-hour format)
 function parseTime(timeStr: string): { hour: number; minute: number } {
