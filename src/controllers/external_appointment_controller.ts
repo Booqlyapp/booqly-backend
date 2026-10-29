@@ -322,18 +322,95 @@ export const getMarketplaceByCustomLink = async (
       });
     }
 
+    const baseUrl = process.env.BASE_URL || "http://localhost:3000";
+    const resolveMediaUrl = (img?: string | null) => {
+      if (!img) return null;
+      if (img.startsWith("http")) return img;
+      if (img.startsWith("/")) return `${baseUrl}${img}`;
+      return `${baseUrl}/uploads/${img}`;
+    };
+
     // Process image URLs
-    const processedMarketplace = {
+    const processedMarketplace: any = {
       ...marketplace.toJSON(),
       imagesList: marketplace.imagesList?.map((img: string) => {
-        if (img.startsWith('http')) return img;
-        return `${process.env.BASE_URL || 'http://localhost:3000'}${img}`;
+        return resolveMediaUrl(img) || img;
       }),
       portfolioImages: marketplace.portfolioImages?.map((img: string) => {
-        if (img.startsWith('http')) return img;
-        return `${process.env.BASE_URL || 'http://localhost:3000'}${img}`;
+        return resolveMediaUrl(img) || img;
       }),
+      bookingPageHeaderImage:
+        resolveMediaUrl(marketplace.bookingPageHeaderImage) ||
+        marketplace.bookingPageHeaderImage,
+      bookingPageHeaderPdf:
+        resolveMediaUrl(marketplace.bookingPageHeaderPdf) ||
+        marketplace.bookingPageHeaderPdf,
     };
+
+    // Attach provider team members for booking stylist selection.
+    if (Array.isArray(processedMarketplace.services) && processedMarketplace.services.length > 0) {
+      const allProviderIds = Array.from(
+        new Set(
+          processedMarketplace.services.flatMap((s: any) =>
+            (Array.isArray(s.providerTeamMemberIds) ? s.providerTeamMemberIds : []).map(
+              (id: any) => String(id)
+            )
+          )
+        )
+      ) as string[];
+
+      let providerMap: Record<
+        string,
+        {
+          id: string;
+          name: string;
+          profilePic: string | null;
+          jobTitle: string | null;
+          isOwner: boolean;
+        }
+      > = {};
+
+      if (allProviderIds.length > 0) {
+        const providers = await User.findAll({
+          where: {
+            id: allProviderIds,
+          },
+          attributes: ["id", "name", "profilePic", "jobTitle", "role", "isTeamMember"],
+        });
+
+        providerMap = Object.fromEntries(
+          providers.map((p) => {
+            const isOwner =
+              p.id === processedMarketplace.userId ||
+              p.role === "suite_owner" ||
+              p.isTeamMember === false;
+            return [
+              p.id,
+              {
+                id: p.id,
+                name: p.name || "Team member",
+                profilePic: resolveMediaUrl(p.profilePic),
+                jobTitle: p.jobTitle || null,
+                isOwner,
+              },
+            ];
+          })
+        );
+      }
+
+      processedMarketplace.services = processedMarketplace.services.map((service: any) => {
+        const ids = Array.isArray(service.providerTeamMemberIds)
+          ? service.providerTeamMemberIds.map((id: any) => String(id))
+          : [];
+        return {
+          ...service,
+          imageUrl: resolveMediaUrl(service.imageUrl) || service.imageUrl,
+          providerTeamMembers: ids
+            .filter((id: string) => Boolean(providerMap[id]))
+            .map((id: string) => providerMap[id]),
+        };
+      });
+    }
 
     return res.status(200).json({
       status: true,
