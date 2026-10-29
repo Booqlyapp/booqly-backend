@@ -382,7 +382,7 @@ export const getMarketplaceByCustomLink = async (
           providers.map((p) => {
             const isOwner =
               p.id === processedMarketplace.userId ||
-              p.role === "suite_owner" ||
+              p.role === "suite" ||
               p.isTeamMember === false;
             return [
               p.id,
