@@ -57,8 +57,13 @@ temp/
 *.key
 *.crt
 
-# Firebase service account key
+# Firebase service account keys (never commit)
 src/config/booqlyServiceAccountKey.json
+src/config/*firebase*adminsdk*.json
+src/config/*-firebase-adminsdk-*.json
+*firebase-adminsdk*.json
+*-firebase-adminsdk-*.json
+firebase-service-account.json
 
 # Database files
 *.sqlite
