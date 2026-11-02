@@ -1018,7 +1018,24 @@ export const getAppointments = async (
     const { count, rows: appointments } = await Appointment.findAndCountAll({
       where: whereClause,
       include: [
-        { model: User, as: "user" }, // Full user object
+        {
+          model: User,
+          as: "user",
+          // Client profile phone (from signup) for provider/owner booking details.
+          attributes: [
+            "id",
+            "name",
+            "email",
+            "phone",
+            "profilePic",
+            "role",
+            "status",
+            "accountVerified",
+            "identityVerified",
+            "professionalVerified",
+            "businessVerified",
+          ],
+        },
         { 
           model: Marketplace, 
           as: "marketplace",
