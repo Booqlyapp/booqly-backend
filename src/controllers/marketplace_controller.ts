@@ -2245,19 +2245,19 @@ export const updateBookingPageCustomization = async (
       updateData.bookingPageHeaderImage = null;
     }
 
-    // Update marketplace
-    const [updatedCount] = await Marketplace.update(
-      updateData,
-      {
-        where: { id: marketplaceId, deletedAt: null },
-        returning: true,
-      }
-    );
-
-    if (updatedCount === 0) {
+    const existing = await Marketplace.findByPk(marketplaceId);
+    if (!existing || existing.deletedAt) {
       return res.status(404).json({
         status: false,
         message: "Marketplace not found or could not be updated.",
+      });
+    }
+
+    // Empty payload (no title/media changes) — succeed without a no-op UPDATE
+    // (Sequelize returns updatedCount=0 for {} and used to look like a 404).
+    if (Object.keys(updateData).length > 0) {
+      await Marketplace.update(updateData, {
+        where: { id: marketplaceId, deletedAt: null },
       });
     }
 
