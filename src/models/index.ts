@@ -220,6 +220,16 @@ export function initModels(sequelize: Sequelize) {
     as: "appointments",
   });
 
+  // Assigned suite team member on an app booking
+  Appointment.belongsTo(User, {
+    foreignKey: "assignedTeamMemberId",
+    as: "assignedTeamMember",
+  });
+  User.hasMany(Appointment, {
+    foreignKey: "assignedTeamMemberId",
+    as: "assignedAppointments",
+  });
+
   // Appointment belongsTo Marketplace
   Appointment.belongsTo(Marketplace, {
     foreignKey: "marketplaceId",
@@ -503,6 +513,15 @@ export function initModels(sequelize: Sequelize) {
   Marketplace.hasMany(ExternalAppointment, {
     foreignKey: "marketplaceId",
     as: "externalAppointments",
+  });
+
+  ExternalAppointment.belongsTo(User, {
+    foreignKey: "assignedTeamMemberId",
+    as: "assignedTeamMember",
+  });
+  User.hasMany(ExternalAppointment, {
+    foreignKey: "assignedTeamMemberId",
+    as: "assignedExternalAppointments",
   });
 
   // Video relationships

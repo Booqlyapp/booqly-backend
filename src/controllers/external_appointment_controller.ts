@@ -311,6 +311,9 @@ export const createExternalAppointment = async (
     const appointment = await ExternalAppointment.create({
       marketplaceId,
       assignedTeamMemberId: assignee.assignedTeamMemberId,
+      clientNoPreference: assignee.hasServiceProviders
+        ? WaitlistService.isClientNoPreference(assignedTeamMemberId)
+        : false,
       servicesData: servicesData,
       firstName,
       lastName,
@@ -1279,6 +1282,9 @@ export const createExternalAppointmentWithDeposit = async (
     const appointment = await ExternalAppointment.create({
       marketplaceId,
       assignedTeamMemberId: assignee.assignedTeamMemberId,
+      clientNoPreference: assignee.hasServiceProviders
+        ? WaitlistService.isClientNoPreference(assignedTeamMemberId)
+        : false,
       servicesData: servicesData,
       firstName,
       lastName,
@@ -1521,6 +1527,14 @@ export const getExternalAppointments = async (
     // Fetch external appointments
     const { count, rows: externalAppointments } = await ExternalAppointment.findAndCountAll({
       where: whereClause,
+      include: [
+        {
+          model: User,
+          as: "assignedTeamMember",
+          required: false,
+          attributes: ["id", "name", "profilePic", "jobTitle", "isTeamMember"],
+        },
+      ],
       limit: limitNum,
       offset,
       order: [["dateTime", sortDirection]],

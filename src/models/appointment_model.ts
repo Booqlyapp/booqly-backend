@@ -14,6 +14,8 @@ interface AppointmentAttributes {
   marketplaceId: string;
   serviceId: string;
   assignedTeamMemberId?: string | null;
+  /** True when the client chose No Preference (auto-assigned). */
+  clientNoPreference?: boolean;
   paymentStatus: string | null;
   paymentMethod?: "apple_pay" | "stripe_card" | "paypal" | "cash" | "other" | null;
   status: "pending" | "canceled" | "postponed" | "availed" | "no_show";
@@ -38,6 +40,7 @@ export class Appointment
   declare marketplaceId: string;
   declare serviceId: string;
   declare assignedTeamMemberId: string | null;
+  declare clientNoPreference: CreationOptional<boolean>;
   declare paymentStatus: "pending" | "paid" | "failed" | "refunded" | "partially_paid";
   declare paymentMethod?: "apple_pay" | "stripe_card" | "paypal" | "cash" | "other" | null;
   declare status: "pending" | "canceled" | "postponed" | "availed" | "no_show";
@@ -85,6 +88,11 @@ export default function initAppointment(sequelize: Sequelize) {
         },
         onUpdate: "CASCADE",
         onDelete: "SET NULL",
+      },
+      clientNoPreference: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
       },
       serviceId: {
         type: DataTypes.UUID,

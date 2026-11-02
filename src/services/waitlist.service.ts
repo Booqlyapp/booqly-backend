@@ -245,6 +245,19 @@ export class WaitlistService {
     return free[0].id;
   }
 
+  /** True when client left assignee empty / chose No Preference. */
+  static isClientNoPreference(
+    assignedTeamMemberId?: string | null
+  ): boolean {
+    const raw =
+      assignedTeamMemberId == null ? "" : String(assignedTeamMemberId).trim();
+    return (
+      !raw ||
+      raw.toLowerCase() === "no_preference" ||
+      raw === "__no_preference__"
+    );
+  }
+
   /**
    * Shared assignee resolution for app + custom-link web bookings.
    * - no providers → null assignee
@@ -279,12 +292,9 @@ export class WaitlistService {
       return { ok: true, assignedTeamMemberId: null };
     }
 
+    const wantsNoPreference = this.isClientNoPreference(assignedTeamMemberId);
     const rawAssignee =
       assignedTeamMemberId == null ? "" : String(assignedTeamMemberId).trim();
-    const wantsNoPreference =
-      !rawAssignee ||
-      rawAssignee.toLowerCase() === "no_preference" ||
-      rawAssignee === "__no_preference__";
 
     if (wantsNoPreference) {
       const picked = await this.pickLeastBookedAvailableTeamMember({

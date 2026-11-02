@@ -22,6 +22,8 @@ interface ExternalAppointmentAttributes {
   id: string;
   marketplaceId: string;
   assignedTeamMemberId?: string | null;
+  /** True when the client chose No Preference (auto-assigned). */
+  clientNoPreference?: boolean;
   servicesData: ServiceData[];
   firstName: string;
   lastName: string;
@@ -54,6 +56,7 @@ export class ExternalAppointment
   declare id: CreationOptional<string>;
   declare marketplaceId: string;
   declare assignedTeamMemberId: string | null;
+  declare clientNoPreference: CreationOptional<boolean>;
   declare servicesData: ServiceData[];
   declare firstName: string;
   declare lastName: string;
@@ -103,6 +106,11 @@ export default function initExternalAppointment(sequelize: Sequelize) {
         },
         onUpdate: "CASCADE",
         onDelete: "SET NULL",
+      },
+      clientNoPreference: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
       },
       servicesData: {
         type: DataTypes.JSONB,

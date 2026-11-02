@@ -354,6 +354,10 @@ export const createAppointment = async (
         marketplaceId,
         serviceId: services[0].serviceId, // Use first service as primary service
         assignedTeamMemberId: resolvedAssignedTeamMemberId,
+        clientNoPreference:
+          serviceProviderIds.length > 0
+            ? WaitlistService.isClientNoPreference(assignedTeamMemberId)
+            : false,
         paymentStatus: paymentStatus ?? "pending",
         paymentMethod: resolvedPaymentMethod,
         dateTime: appointmentDate,
@@ -725,6 +729,8 @@ export const createProviderAppointment = async (
         marketplaceId,
         serviceId: services[0].serviceId,
         assignedTeamMemberId: resolvedAssignedTeamMemberId,
+        // Owner/provider picked the member — not a client No Preference booking.
+        clientNoPreference: false,
         paymentStatus: paymentStatus ?? "pending",
         dateTime: appointmentDate,
         status: "pending",
@@ -1035,6 +1041,12 @@ export const getAppointments = async (
             "professionalVerified",
             "businessVerified",
           ],
+        },
+        {
+          model: User,
+          as: "assignedTeamMember",
+          required: false,
+          attributes: ["id", "name", "profilePic", "jobTitle", "isTeamMember"],
         },
         { 
           model: Marketplace, 
