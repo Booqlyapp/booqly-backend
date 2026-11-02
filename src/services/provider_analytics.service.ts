@@ -3,6 +3,7 @@ import { User } from "../models/user_model";
 import { Service } from "../models/service_model";
 import { Marketplace } from "../models/marketplace_model";
 import { Review } from "../models/review_model";
+import { ExternalAppointment } from "../models/external_appointment_model";
 import { Op, Sequelize } from "sequelize";
 import { SubscriptionService } from "./subscription.service";
 import {
@@ -775,6 +776,24 @@ export class ProviderAnalyticsService {
       teamMemberName: string;
       stationNumber: number;
     }>;
+    /** Bookings where the client picked a specific provider vs no preference. */
+    preferredByClients: {
+      choseProviderBookings: number;
+      totalBookings: number;
+      choseProviderBookingPct: number;
+      earnedFromChosen: number;
+      totalSuiteRevenue: number;
+      earnedFromChosenPct: number;
+      members: Array<{
+        teamMemberId: string | null;
+        name: string;
+        profilePic: string | null;
+        isNoPreference: boolean;
+        bookings: number;
+        revenue: number;
+        clientCount: number;
+      }>;
+    };
   }> {
     const marketplace = await Marketplace.findByPk(marketplaceId);
     const personFilter = filters.teamMemberId || undefined;
@@ -1049,6 +1068,150 @@ export class ProviderAnalyticsService {
       };
     });
 
+    // Preferred-by-clients: app appointments + custom-link external bookings.
+    type PrefRow = {
+      assignedTeamMemberId: string | null;
+      clientNoPreference: boolean;
+      clientKey: string;
+      price: number;
+      completed: boolean;
+    };
+
+    const prefRows: PrefRow[] = suiteWide.map((a) => ({
+      assignedTeamMemberId: a.assignedTeamMemberId
+        ? String(a.assignedTeamMemberId)
+        : null,
+      clientNoPreference: a.clientNoPreference === true,
+      clientKey: a.userId ? `u:${a.userId}` : `a:${a.id}`,
+      price: Number(a.price || 0),
+      completed: a.status === COMPLETED,
+    }));
+
+    const externalWhere: Record<string, unknown> = {
+      marketplaceId,
+      dateTime: {
+        [Op.between]: [filters.dateRange.startDate, filters.dateRange.endDate],
+      },
+    };
+    if (filters.bookingStatus === "completed") {
+      externalWhere.status = "completed";
+    } else if (filters.bookingStatus === "cancelled") {
+      externalWhere.status = "canceled";
+    } else if (filters.bookingStatuses && filters.bookingStatuses.length > 0) {
+      const mapped = filters.bookingStatuses
+        .map((s) => {
+          if (s === "completed") return "completed";
+          if (s === "cancelled") return "canceled";
+          return null;
+        })
+        .filter(Boolean);
+      if (mapped.length > 0) {
+        externalWhere.status = { [Op.in]: mapped };
+      }
+    }
+
+    const externalRows = await ExternalAppointment.findAll({
+      where: externalWhere as any,
+      attributes: [
+        "id",
+        "assignedTeamMemberId",
+        "clientNoPreference",
+        "email",
+        "price",
+        "status",
+        "servicesData",
+      ],
+    });
+
+    for (const row of externalRows as any[]) {
+      if (filters.serviceId) {
+        const services = Array.isArray(row.servicesData) ? row.servicesData : [];
+        const hasService = services.some(
+          (s: any) => String(s?.serviceId || "") === String(filters.serviceId)
+        );
+        if (!hasService) continue;
+      }
+      prefRows.push({
+        assignedTeamMemberId: row.assignedTeamMemberId
+          ? String(row.assignedTeamMemberId)
+          : null,
+        clientNoPreference: row.clientNoPreference === true,
+        clientKey: row.email
+          ? `e:${String(row.email).toLowerCase()}`
+          : `x:${row.id}`,
+        price: Number(row.price || 0),
+        completed: row.status === "completed",
+      });
+    }
+
+    const totalBookingsPref = prefRows.length;
+    const suiteRevenueForPref = prefRows
+      .filter((r) => r.completed)
+      .reduce((s, r) => s + r.price, 0);
+
+    const choseRows = prefRows.filter(
+      (r) => !r.clientNoPreference && r.assignedTeamMemberId != null
+    );
+    const noPrefRows = prefRows.filter((r) => r.clientNoPreference === true);
+    const earnedFromChosen = choseRows
+      .filter((r) => r.completed)
+      .reduce((s, r) => s + r.price, 0);
+
+    const teamOnly = membersForPerf.filter((m) => !m.isOwner);
+    const preferredMembers = teamOnly
+      .map((m) => {
+        const memberChosen = choseRows.filter(
+          (r) => r.assignedTeamMemberId === m.id
+        );
+        const clients = new Set(memberChosen.map((r) => r.clientKey));
+        const revenue = memberChosen
+          .filter((r) => r.completed)
+          .reduce((s, r) => s + r.price, 0);
+        return {
+          teamMemberId: m.id,
+          name: m.name,
+          profilePic: m.profilePic,
+          isNoPreference: false,
+          bookings: memberChosen.length,
+          revenue,
+          clientCount: clients.size,
+        };
+      })
+      .filter((m) => m.bookings > 0)
+      .sort((a, b) => b.clientCount - a.clientCount || b.revenue - a.revenue);
+
+    if (noPrefRows.length > 0) {
+      const noPrefClients = new Set(noPrefRows.map((r) => r.clientKey));
+      const noPrefRevenue = noPrefRows
+        .filter((r) => r.completed)
+        .reduce((s, r) => s + r.price, 0);
+      preferredMembers.push({
+        teamMemberId: null,
+        name: "No preference",
+        profilePic: null,
+        isNoPreference: true,
+        bookings: noPrefRows.length,
+        revenue: noPrefRevenue,
+        clientCount: noPrefClients.size,
+      });
+    }
+
+    const preferredByClients = {
+      choseProviderBookings: choseRows.length,
+      totalBookings: totalBookingsPref,
+      choseProviderBookingPct:
+        totalBookingsPref > 0
+          ? Math.round((choseRows.length / totalBookingsPref) * 100)
+          : 0,
+      earnedFromChosen,
+      totalSuiteRevenue: suiteRevenueForPref,
+      earnedFromChosenPct:
+        suiteRevenueForPref > 0
+          ? Math.round((earnedFromChosen / suiteRevenueForPref) * 100)
+          : 0,
+      members: preferredMembers,
+    };
+
     const goalContext = await this.getRevenueGoalContext(marketplaceId);
 
     return {
@@ -1104,6 +1267,7 @@ export class ProviderAnalyticsService {
         tipsAndCommissionsEnabled: false,
       },
       upNextToday,
+      preferredByClients,
     };
   }
 
