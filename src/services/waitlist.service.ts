@@ -1,9 +1,10 @@
-import { Op } from "sequelize";
+import { Op, Transaction } from "sequelize";
 import { Appointment } from "../models/appointment_model";
 import { ExternalAppointment } from "../models/external_appointment_model";
 import { BlockedTime } from "../models/blocked_time_model";
 import { Marketplace } from "../models/marketplace_model";
 import { Waitlist } from "../models/waitlist_model";
+import { User } from "../models/user_model";
 import { NotificationService } from "./notification.service";
 
 const ACTIVE_APPOINTMENT_STATUSES = ["pending", "postponed", "availed"];
@@ -147,25 +148,201 @@ export class WaitlistService {
       Boolean(options?.ignoreAppointments) ||
       Boolean(options?.ignoreExternalAppointments);
 
+    const externalWhere: Record<string, unknown> = {
+      marketplaceId,
+      status: { [Op.in]: ACTIVE_EXTERNAL_APPOINTMENT_STATUSES },
+      dateTime: { [Op.between]: [start, end] },
+    };
+    // Match Appointment filtering when a specific assignee is requested.
+    if (options && "assignedTeamMemberId" in options) {
+      externalWhere.assignedTeamMemberId =
+        options.assignedTeamMemberId == null
+          ? { [Op.is]: null }
+          : options.assignedTeamMemberId;
+    }
+
     const [appointmentCount, externalCount] = await Promise.all([
       options?.ignoreAppointments
         ? Promise.resolve(0)
         : Appointment.count({ where: appointmentWhere }),
       skipExternal
         ? Promise.resolve(0)
-        : ExternalAppointment.count({
-            where: {
-              marketplaceId,
-              status: { [Op.in]: ACTIVE_EXTERNAL_APPOINTMENT_STATUSES },
-              dateTime: { [Op.between]: [start, end] },
-            },
-          }),
+        : ExternalAppointment.count({ where: externalWhere }),
     ]);
 
     if (appointmentCount + externalCount > 0) return true;
 
     if (options?.ignoreBlockedTimes) return false;
     return this.isSlotBlocked(marketplaceId, dateTime);
+  }
+
+  /**
+   * For client "No Preference": pick a free team member at [dateTime].
+   * Among free members, prefers the one with fewer active bookings.
+   * Returns null when every candidate is busy (or none are valid team members).
+   */
+  static async pickLeastBookedAvailableTeamMember(params: {
+    marketplaceId: string;
+    dateTime: Date;
+    candidateIds: string[];
+    teamOwnerId: string;
+    transaction?: Transaction;
+  }): Promise<string | null> {
+    const { marketplaceId, dateTime, candidateIds, teamOwnerId, transaction } =
+      params;
+
+    const free: Array<{ id: string; bookingCount: number }> = [];
+
+    for (const rawId of candidateIds) {
+      const memberId = String(rawId);
+      const member = await User.findOne({
+        where: {
+          id: memberId,
+          isTeamMember: true,
+          teamOwnerId,
+        },
+        transaction,
+      });
+      if (!member) continue;
+
+      const occupied = await this.isSlotOccupied(marketplaceId, dateTime, {
+        assignedTeamMemberId: memberId,
+        ignoreBlockedTimes: true,
+      });
+      if (occupied) continue;
+
+      const [appointmentCount, externalCount] = await Promise.all([
+        Appointment.count({
+          where: {
+            marketplaceId,
+            assignedTeamMemberId: memberId,
+            status: { [Op.in]: ACTIVE_APPOINTMENT_STATUSES },
+          },
+          transaction,
+        }),
+        ExternalAppointment.count({
+          where: {
+            marketplaceId,
+            assignedTeamMemberId: memberId,
+            status: { [Op.in]: ACTIVE_EXTERNAL_APPOINTMENT_STATUSES },
+          },
+          transaction,
+        }),
+      ]);
+
+      free.push({ id: memberId, bookingCount: appointmentCount + externalCount });
+    }
+
+    if (free.length === 0) return null;
+
+    free.sort((a, b) => {
+      if (a.bookingCount !== b.bookingCount) {
+        return a.bookingCount - b.bookingCount;
+      }
+      return a.id.localeCompare(b.id);
+    });
+
+    return free[0].id;
+  }
+
+  /**
+   * Shared assignee resolution for app + custom-link web bookings.
+   * - no providers → null assignee
+   * - missing / no_preference → least-booked free member
+   * - explicit id → validate + per-member occupancy
+   */
+  static async resolveServiceTeamAssignee(params: {
+    marketplaceId: string;
+    dateTime: Date;
+    serviceProviderIds: string[];
+    teamOwnerId: string;
+    assignedTeamMemberId?: string | null;
+    transaction?: Transaction;
+  }): Promise<
+    | { ok: true; assignedTeamMemberId: string | null }
+    | {
+        ok: false;
+        reason: "all_providers_booked" | "invalid_provider" | "provider_occupied";
+        message: string;
+      }
+  > {
+    const {
+      marketplaceId,
+      dateTime,
+      serviceProviderIds,
+      teamOwnerId,
+      assignedTeamMemberId,
+      transaction,
+    } = params;
+
+    if (!serviceProviderIds.length) {
+      return { ok: true, assignedTeamMemberId: null };
+    }
+
+    const rawAssignee =
+      assignedTeamMemberId == null ? "" : String(assignedTeamMemberId).trim();
+    const wantsNoPreference =
+      !rawAssignee ||
+      rawAssignee.toLowerCase() === "no_preference" ||
+      rawAssignee === "__no_preference__";
+
+    if (wantsNoPreference) {
+      const picked = await this.pickLeastBookedAvailableTeamMember({
+        marketplaceId,
+        dateTime,
+        candidateIds: serviceProviderIds,
+        teamOwnerId,
+        transaction,
+      });
+      if (!picked) {
+        return {
+          ok: false,
+          reason: "all_providers_booked",
+          message:
+            "All service providers are booked. Please choose another date and time.",
+        };
+      }
+      return { ok: true, assignedTeamMemberId: picked };
+    }
+
+    if (!serviceProviderIds.includes(rawAssignee)) {
+      return {
+        ok: false,
+        reason: "invalid_provider",
+        message: "Selected service provider is not assigned to this service.",
+      };
+    }
+
+    const assignedMember = await User.findOne({
+      where: {
+        id: rawAssignee,
+        isTeamMember: true,
+        teamOwnerId,
+      },
+      transaction,
+    });
+    if (!assignedMember) {
+      return {
+        ok: false,
+        reason: "invalid_provider",
+        message: "Selected service provider was not found for this suite.",
+      };
+    }
+
+    const memberOccupied = await this.isSlotOccupied(marketplaceId, dateTime, {
+      assignedTeamMemberId: assignedMember.id,
+      ignoreBlockedTimes: true,
+    });
+    if (memberOccupied) {
+      return {
+        ok: false,
+        reason: "provider_occupied",
+        message:
+          "This service provider is already booked at that time. Please choose another date and time.",
+      };
+    }
+
+    return { ok: true, assignedTeamMemberId: assignedMember.id };
   }
 
   static async getMarketplaceSettings(marketplaceId: string): Promise<{ waitlistEnabled: boolean; claimWindowMinutes: number }> {

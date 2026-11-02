@@ -157,22 +157,38 @@ export const createAppointment = async (
       });
     }
 
-    const isSlotOccupied = await WaitlistService.isSlotOccupied(
-      marketplaceId,
-      appointmentDate,
-      { ignoreBlockedTimes: true }
-    );
-    if (isSlotOccupied) {
-      const waitlistSettings = await WaitlistService.getMarketplaceSettings(marketplaceId);
-      await transaction?.rollback();
-      return res.status(409).json({
-        status: false,
-        reason: "occupied",
-        message: "This slot is fully booked. Join the waitlist to be notified if it opens.",
-        data: {
-          waitlistEnabled: waitlistSettings.waitlistEnabled,
-        },
-      });
+    // When the primary service has assigned team members, occupancy is checked
+    // per member after assignee resolution (supports No Preference / multi-member).
+    const primaryServiceIdEarly = services[0]?.serviceId;
+    const primaryServiceEarly = primaryServiceIdEarly
+      ? await Service.findByPk(primaryServiceIdEarly, {
+          attributes: ["id", "providerTeamMemberIds"],
+          transaction,
+        })
+      : null;
+    const hasServiceProvidersEarly =
+      (primaryServiceEarly?.providerTeamMemberIds || []).length > 0;
+
+    if (!hasServiceProvidersEarly) {
+      const isSlotOccupied = await WaitlistService.isSlotOccupied(
+        marketplaceId,
+        appointmentDate,
+        { ignoreBlockedTimes: true }
+      );
+      if (isSlotOccupied) {
+        const waitlistSettings =
+          await WaitlistService.getMarketplaceSettings(marketplaceId);
+        await transaction?.rollback();
+        return res.status(409).json({
+          status: false,
+          reason: "occupied",
+          message:
+            "This slot is fully booked. Join the waitlist to be notified if it opens.",
+          data: {
+            waitlistEnabled: waitlistSettings.waitlistEnabled,
+          },
+        });
+      }
     }
 
     const claimCheck = await WaitlistService.canUserBookSlot(userId, marketplaceId, appointmentDate);
@@ -276,7 +292,8 @@ export const createAppointment = async (
       });
     }
 
-    // Validate assigned team member against the primary service providers (if any).
+    // Resolve assigned team member against the primary service providers (if any).
+    // Missing / "no_preference" → auto-assign a free member (fewest active bookings).
     let resolvedAssignedTeamMemberId: string | null = null;
     const primaryService = validServices.find(
       (s) => s.id === services[0].serviceId
@@ -286,36 +303,31 @@ export const createAppointment = async (
     );
 
     if (serviceProviderIds.length > 0) {
-      if (!assignedTeamMemberId) {
-        await transaction?.rollback();
-        return res.status(400).json({
-          status: false,
-          message: "Please select a service provider for this service.",
-        });
-      }
-      if (!serviceProviderIds.includes(String(assignedTeamMemberId))) {
-        await transaction?.rollback();
-        return res.status(400).json({
-          status: false,
-          message: "Selected service provider is not assigned to this service.",
-        });
-      }
-      const assignedMember = await User.findOne({
-        where: {
-          id: assignedTeamMemberId,
-          isTeamMember: true,
-          teamOwnerId: provider.id,
-        },
-        transaction,
+      const assigneeResult = await WaitlistService.resolveServiceTeamAssignee({
+        marketplaceId,
+        dateTime: appointmentDate,
+        serviceProviderIds,
+        teamOwnerId: provider.id,
+        assignedTeamMemberId,
+        transaction: transaction ?? undefined,
       });
-      if (!assignedMember) {
+
+      if (!assigneeResult.ok) {
         await transaction?.rollback();
-        return res.status(400).json({
+        const statusCode =
+          assigneeResult.reason === "all_providers_booked" ||
+          assigneeResult.reason === "provider_occupied"
+            ? 409
+            : 400;
+        return res.status(statusCode).json({
           status: false,
-          message: "Selected service provider was not found for this suite.",
+          reason: assigneeResult.reason,
+          message: assigneeResult.message,
+          data: { reason: assigneeResult.reason },
         });
       }
-      resolvedAssignedTeamMemberId = assignedMember.id;
+
+      resolvedAssignedTeamMemberId = assigneeResult.assignedTeamMemberId;
     }
 
     // Optional: Validate that provided total price is reasonable (basic sanity check)

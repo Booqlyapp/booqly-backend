@@ -30,6 +30,65 @@ interface GetExternalAppointmentsQuery {
   sort?: string; // "asc" | "desc" by dateTime
 }
 
+/** Same No Preference / assignee rules as in-app client booking. */
+async function resolveExternalBookingAssignee(params: {
+  marketplaceId: string;
+  bookingDateTime: Date;
+  primaryService: Service | undefined;
+  teamOwnerId: string;
+  assignedTeamMemberId?: string | null;
+  transaction?: any;
+}): Promise<
+  | { ok: true; assignedTeamMemberId: string | null; hasServiceProviders: boolean }
+  | { ok: false; status: number; body: Record<string, unknown> }
+> {
+  const serviceProviderIds = (
+    params.primaryService?.providerTeamMemberIds || []
+  ).map(String);
+  const hasServiceProviders = serviceProviderIds.length > 0;
+
+  if (!hasServiceProviders) {
+    return {
+      ok: true,
+      assignedTeamMemberId: null,
+      hasServiceProviders: false,
+    };
+  }
+
+  const assigneeResult = await WaitlistService.resolveServiceTeamAssignee({
+    marketplaceId: params.marketplaceId,
+    dateTime: params.bookingDateTime,
+    serviceProviderIds,
+    teamOwnerId: params.teamOwnerId,
+    assignedTeamMemberId: params.assignedTeamMemberId,
+    transaction: params.transaction,
+  });
+
+  if (!assigneeResult.ok) {
+    const status =
+      assigneeResult.reason === "all_providers_booked" ||
+      assigneeResult.reason === "provider_occupied"
+        ? 409
+        : 400;
+    return {
+      ok: false,
+      status,
+      body: {
+        status: false,
+        reason: assigneeResult.reason,
+        message: assigneeResult.message,
+        data: { reason: assigneeResult.reason },
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    assignedTeamMemberId: assigneeResult.assignedTeamMemberId,
+    hasServiceProviders: true,
+  };
+}
+
 // Create external appointment (public booking) - Supports multiple services with add-ons
 export const createExternalAppointment = async (
   req: Request,
@@ -52,6 +111,7 @@ export const createExternalAppointment = async (
       acceptedTerms,
       marketingConsent,
       notes,
+      assignedTeamMemberId,
     } = req.body;
 
     // Validation
@@ -120,29 +180,6 @@ export const createExternalAppointment = async (
       });
     }
 
-    const slotOccupied = await WaitlistService.isSlotOccupied(
-      marketplaceId,
-      bookingDateTime,
-      { ignoreBlockedTimes: true }
-    );
-    if (slotOccupied) {
-      await transaction.rollback();
-      return res.status(409).json({
-        status: false,
-        reason: "occupied",
-        message: "This slot is fully booked.",
-      });
-    }
-
-    const claimCheck = await WaitlistService.canPublicBookSlot(marketplaceId, bookingDateTime);
-    if (!claimCheck.allowed) {
-      await transaction.rollback();
-      return res.status(403).json({
-        status: false,
-        message: claimCheck.message,
-      });
-    }
-
     // Verify marketplace exists
     const marketplace = await Marketplace.findOne({
       where: { id: marketplaceId, deletedAt: null },
@@ -184,6 +221,60 @@ export const createExternalAppointment = async (
       });
     }
 
+    const primaryService =
+      foundServices.find((s: any) => s.id === services[0].serviceId) ||
+      foundServices[0];
+    const hasServiceProviders =
+      (primaryService?.providerTeamMemberIds || []).length > 0;
+
+    // Solo / no team providers: marketplace-wide occupancy.
+    // Team services: per-member check after assignee resolution.
+    if (!hasServiceProviders) {
+      const slotOccupied = await WaitlistService.isSlotOccupied(
+        marketplaceId,
+        bookingDateTime,
+        { ignoreBlockedTimes: true }
+      );
+      if (slotOccupied) {
+        await transaction.rollback();
+        return res.status(409).json({
+          status: false,
+          reason: "occupied",
+          message: "This slot is fully booked.",
+        });
+      }
+    }
+
+    const claimCheck = await WaitlistService.canPublicBookSlot(marketplaceId, bookingDateTime);
+    if (!claimCheck.allowed) {
+      await transaction.rollback();
+      return res.status(403).json({
+        status: false,
+        message: claimCheck.message,
+      });
+    }
+
+    if (!marketplace.userId) {
+      await transaction.rollback();
+      return res.status(400).json({
+        status: false,
+        message: "Provider not found for this marketplace.",
+      });
+    }
+
+    const assignee = await resolveExternalBookingAssignee({
+      marketplaceId,
+      bookingDateTime,
+      primaryService,
+      teamOwnerId: String(marketplace.userId),
+      assignedTeamMemberId,
+      transaction,
+    });
+    if (!assignee.ok) {
+      await transaction.rollback();
+      return res.status(assignee.status).json(assignee.body);
+    }
+
     // Build servicesData array with snapshots
     const servicesData = services
       .map((serviceReq: any) => {
@@ -219,6 +310,7 @@ export const createExternalAppointment = async (
     // Create external appointment with servicesData
     const appointment = await ExternalAppointment.create({
       marketplaceId,
+      assignedTeamMemberId: assignee.assignedTeamMemberId,
       servicesData: servicesData,
       firstName,
       lastName,
@@ -923,6 +1015,7 @@ export const createExternalAppointmentWithDeposit = async (
       marketingConsent,
       notes,
       paymentMethodId,
+      assignedTeamMemberId,
     } = req.body;
 
     // Validation
@@ -999,27 +1092,6 @@ export const createExternalAppointmentWithDeposit = async (
       });
     }
 
-    const slotOccupied = await WaitlistService.isSlotOccupied(
-      marketplaceId,
-      bookingDateTime,
-      { ignoreBlockedTimes: true }
-    );
-    if (slotOccupied) {
-      return res.status(409).json({
-        status: false,
-        reason: "occupied",
-        message: "This slot is fully booked.",
-      });
-    }
-
-    const claimCheck = await WaitlistService.canPublicBookSlot(marketplaceId, bookingDateTime);
-    if (!claimCheck.allowed) {
-      return res.status(403).json({
-        status: false,
-        message: claimCheck.message,
-      });
-    }
-
     // Verify marketplace exists
     const marketplace = await Marketplace.findOne({
       where: { id: marketplaceId, deletedAt: null },
@@ -1065,6 +1137,47 @@ export const createExternalAppointmentWithDeposit = async (
         status: false,
         message: "One or more services not found",
       });
+    }
+
+    const primaryService =
+      foundServices.find((s: any) => s.id === services[0].serviceId) ||
+      foundServices[0];
+    const hasServiceProviders =
+      (primaryService?.providerTeamMemberIds || []).length > 0;
+
+    if (!hasServiceProviders) {
+      const slotOccupied = await WaitlistService.isSlotOccupied(
+        marketplaceId,
+        bookingDateTime,
+        { ignoreBlockedTimes: true }
+      );
+      if (slotOccupied) {
+        return res.status(409).json({
+          status: false,
+          reason: "occupied",
+          message: "This slot is fully booked.",
+        });
+      }
+    }
+
+    const claimCheck = await WaitlistService.canPublicBookSlot(marketplaceId, bookingDateTime);
+    if (!claimCheck.allowed) {
+      return res.status(403).json({
+        status: false,
+        message: claimCheck.message,
+      });
+    }
+
+    // Resolve assignee before charging so we never take payment when all providers are booked.
+    const assignee = await resolveExternalBookingAssignee({
+      marketplaceId,
+      bookingDateTime,
+      primaryService,
+      teamOwnerId: String(marketplace.userId),
+      assignedTeamMemberId,
+    });
+    if (!assignee.ok) {
+      return res.status(assignee.status).json(assignee.body);
     }
 
     // Build servicesData array
@@ -1165,6 +1278,7 @@ export const createExternalAppointmentWithDeposit = async (
     // Create external appointment with payment info and servicesData
     const appointment = await ExternalAppointment.create({
       marketplaceId,
+      assignedTeamMemberId: assignee.assignedTeamMemberId,
       servicesData: servicesData,
       firstName,
       lastName,
