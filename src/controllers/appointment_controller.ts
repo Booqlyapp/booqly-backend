@@ -16,6 +16,7 @@ import {
   getTeamMemberPermissionsForUser,
 } from "../utils/team_member_permission_helper";
 import { parseBookingDateTime } from "../utils/booking_datetime";
+import { BookingConfirmationEmailService } from "../services/booking_confirmation_email.service";
 
 interface CreateAppointmentData {
   marketplaceId: string;
@@ -423,6 +424,10 @@ export const createAppointment = async (
       });
     }
 
+    BookingConfirmationEmailService.queueSendForAppAppointment(
+      newAppointment.id
+    );
+
     return res.status(201).json({
       status: true,
       message: `Appointment created successfully with ${services.length} services (total price: ${price}).`,
@@ -781,6 +786,10 @@ export const createProviderAppointment = async (
         },
       ],
     });
+
+    BookingConfirmationEmailService.queueSendForAppAppointment(
+      newAppointment.id
+    );
 
     return res.status(201).json({
       status: true,
@@ -1575,6 +1584,19 @@ export const updateAppointmentStatus = async (
         status: false,
         message: "Failed to retrieve updated appointment.",
       });
+    }
+
+    // Provider/owner confirmed the booking (Confirm action → availed) or
+    // otherwise updated status — notify the client with the confirmation email.
+    if (
+      previousStatus !== status &&
+      status !== "canceled" &&
+      !isAppointmentOwner
+    ) {
+      BookingConfirmationEmailService.queueSendForAppAppointment(
+        appointmentId,
+        { isStatusUpdate: true }
+      );
     }
 
     return res.status(200).json({

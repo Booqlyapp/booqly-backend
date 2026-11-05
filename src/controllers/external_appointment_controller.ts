@@ -19,6 +19,7 @@ import {
   getTeamMemberPermissionsForUser,
 } from "../utils/team_member_permission_helper";
 import { parseBookingDateTime } from "../utils/booking_datetime";
+import { BookingConfirmationEmailService } from "../services/booking_confirmation_email.service";
 
 interface GetExternalAppointmentsQuery {
   marketplaceId: string;
@@ -332,6 +333,10 @@ export const createExternalAppointment = async (
 
     await transaction.commit();
   await WaitlistService.clearSlotWaitlist(marketplaceId, bookingDateTime);
+
+    BookingConfirmationEmailService.queueSendForExternalAppointment(
+      appointment.id
+    );
 
     return res.status(201).json({
       status: true,
@@ -1306,6 +1311,10 @@ export const createExternalAppointmentWithDeposit = async (
 
     await WaitlistService.clearSlotWaitlist(marketplaceId, bookingDateTime);
 
+    BookingConfirmationEmailService.queueSendForExternalAppointment(
+      appointment.id
+    );
+
     return res.status(201).json({
       status: true,
       message: "Appointment booked successfully! Deposit payment confirmed. You will receive a confirmation email shortly.",
@@ -1621,6 +1630,15 @@ export const updateExternalAppointmentStatus = async (
       await WaitlistService.clearSlotWaitlist(
         externalAppointment.marketplaceId,
         externalAppointment.dateTime
+      );
+    }
+
+    const nextStatus = status.toLowerCase();
+    // Notify client when provider/owner/team confirms (or otherwise updates) status.
+    if (previousStatus !== nextStatus && nextStatus !== "canceled") {
+      BookingConfirmationEmailService.queueSendForExternalAppointment(
+        appointmentId,
+        { isStatusUpdate: true }
       );
     }
 
