@@ -4,6 +4,7 @@ import {
   createProviderAppointment,
   createAppointmentPaymentIntent,
   getAppointments,
+  getClientAppointmentById,
   getUserAppointments,
   markAppointmentPaidInCash,
   updateAppointmentDateTime,
@@ -26,6 +27,7 @@ router.post(
 router.post("/:appointmentId/payment-intent", authenticateToken, createAppointmentPaymentIntent);
 router.get("/get-appointments", authenticateToken, getAppointments);
 router.get("/get-user-appointments", authenticateToken, getUserAppointments);
+router.get("/client/:appointmentId", authenticateToken, getClientAppointmentById);
 router.put("/update-appointment-date-time", authenticateToken, updateAppointmentDateTime);
 router.put(
   "/update-appointment-payment-status",

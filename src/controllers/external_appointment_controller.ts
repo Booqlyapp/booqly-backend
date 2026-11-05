@@ -1575,6 +1575,221 @@ export const getExternalAppointments = async (
   }
 };
 
+/**
+ * Public: fetch one custom-link (web) booking by id for email manage links.
+ * UUID is the access key for the guest manage page.
+ */
+export const getPublicExternalAppointmentById = async (
+  req: any,
+  res: Response
+): Promise<Response> => {
+  try {
+    const { appointmentId } = req.params;
+    if (!appointmentId) {
+      return res.status(400).json({
+        status: false,
+        message: "appointmentId is required.",
+      });
+    }
+
+    const appointment = await ExternalAppointment.findByPk(appointmentId, {
+      include: [
+        {
+          model: Marketplace,
+          as: "marketplace",
+          attributes: [
+            "id",
+            "businessName",
+            "address",
+            "customLink",
+            "phoneNumber",
+          ],
+        },
+        {
+          model: User,
+          as: "assignedTeamMember",
+          attributes: ["id", "name"],
+          required: false,
+        },
+      ],
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        status: false,
+        message: "Appointment not found.",
+      });
+    }
+
+    const assignee = (appointment as any).assignedTeamMember as
+      | User
+      | undefined;
+    const stylistName = appointment.clientNoPreference
+      ? "No preference"
+      : assignee?.name?.trim() || null;
+
+    return res.status(200).json({
+      status: true,
+      message: "Appointment fetched successfully.",
+      data: {
+        ...appointment.toJSON(),
+        stylistName,
+      },
+    });
+  } catch (err: any) {
+    console.error("Error fetching public external appointment:", err);
+    return res.status(500).json({
+      status: false,
+      message: `Internal server error: ${err.message || err}`,
+    });
+  }
+};
+
+/** Public guest cancel — requires matching booking email. */
+export const cancelPublicExternalAppointment = async (
+  req: any,
+  res: Response
+): Promise<Response> => {
+  try {
+    const { appointmentId } = req.params;
+    const email = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
+
+    if (!appointmentId || !email) {
+      return res.status(400).json({
+        status: false,
+        message: "appointmentId and email are required.",
+      });
+    }
+
+    const appointment = await ExternalAppointment.findByPk(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({
+        status: false,
+        message: "Appointment not found.",
+      });
+    }
+
+    if ((appointment.email || "").trim().toLowerCase() !== email) {
+      return res.status(403).json({
+        status: false,
+        message: "Email does not match this booking.",
+      });
+    }
+
+    if (appointment.status === "canceled") {
+      return res.status(200).json({
+        status: true,
+        message: "Appointment is already canceled.",
+        data: appointment.toJSON(),
+      });
+    }
+
+    const previousStatus = appointment.status;
+    await appointment.update({ status: "canceled" });
+
+    if (["pending", "confirmed"].includes(previousStatus)) {
+      await WaitlistService.processSlotAvailability(
+        appointment.marketplaceId,
+        appointment.dateTime
+      );
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Appointment canceled successfully.",
+      data: appointment.toJSON(),
+    });
+  } catch (err: any) {
+    console.error("Error canceling public external appointment:", err);
+    return res.status(500).json({
+      status: false,
+      message: `Internal server error: ${err.message || err}`,
+    });
+  }
+};
+
+/** Public guest reschedule — requires matching booking email + new ISO dateTime. */
+export const reschedulePublicExternalAppointment = async (
+  req: any,
+  res: Response
+): Promise<Response> => {
+  try {
+    const { appointmentId } = req.params;
+    const email = String(req.body?.email || "")
+      .trim()
+      .toLowerCase();
+    const dateTimeRaw = req.body?.dateTime;
+
+    if (!appointmentId || !email || !dateTimeRaw) {
+      return res.status(400).json({
+        status: false,
+        message: "appointmentId, email, and dateTime are required.",
+      });
+    }
+
+    const appointment = await ExternalAppointment.findByPk(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({
+        status: false,
+        message: "Appointment not found.",
+      });
+    }
+
+    if ((appointment.email || "").trim().toLowerCase() !== email) {
+      return res.status(403).json({
+        status: false,
+        message: "Email does not match this booking.",
+      });
+    }
+
+    if (appointment.status === "canceled" || appointment.status === "completed") {
+      return res.status(400).json({
+        status: false,
+        message: `Cannot reschedule a ${appointment.status} appointment.`,
+      });
+    }
+
+    const bookingDateTime = parseBookingDateTime(String(dateTimeRaw));
+    if (Number.isNaN(bookingDateTime.getTime())) {
+      return res.status(400).json({
+        status: false,
+        message: "dateTime must be a valid ISO date.",
+      });
+    }
+
+    const oldDateTime = appointment.dateTime;
+    await appointment.update({ dateTime: bookingDateTime });
+
+    await WaitlistService.processSlotAvailability(
+      appointment.marketplaceId,
+      oldDateTime
+    );
+    await WaitlistService.clearSlotWaitlist(
+      appointment.marketplaceId,
+      bookingDateTime
+    );
+
+    BookingConfirmationEmailService.queueSendForExternalAppointment(
+      appointmentId,
+      { isStatusUpdate: true }
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Appointment rescheduled successfully.",
+      data: appointment.toJSON(),
+    });
+  } catch (err: any) {
+    console.error("Error rescheduling public external appointment:", err);
+    return res.status(500).json({
+      status: false,
+      message: `Internal server error: ${err.message || err}`,
+    });
+  }
+};
+
 // Update external appointment status
 export const updateExternalAppointmentStatus = async (
   req: any,

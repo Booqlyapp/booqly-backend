@@ -23,6 +23,7 @@ import PromoUrlRoute from "./promo_url_route";
 import PublicPromoRoute from "./public_promo_route";
 import PublicReelRoute from "./public_reel_route";
 import PromoBookingRoute from "./promo_booking_route";
+import AppointmentDeeplinkRoute from "./appointment_deeplink_route";
 import AssetlinksRoute from "./assetlinks_route";
 import FriendRoute from "./friend_route";
 import FavoriteRoute from "./favorite_route";
@@ -75,6 +76,7 @@ router.use("/promo-url", PromoUrlRoute);
 router.use("/", PublicPromoRoute); // For public /promo endpoint
 router.use("/", PublicReelRoute); // For public /r/:code reel short links
 router.use("/", PromoBookingRoute); // For promo booking data endpoint
+router.use("/", AppointmentDeeplinkRoute); // Email Reschedule/Cancel → app appointment
 router.use("/", AssetlinksRoute); // For Android App Links verification
 router.use("/friends", FriendRoute);
 router.use("/favorites", FavoriteRoute);

@@ -5,6 +5,8 @@ import { Marketplace } from "../models/marketplace_model";
 import { User } from "../models/user_model";
 import { Service } from "../models/service_model";
 
+export type BookingEmailSource = "app" | "web";
+
 export type BookingEmailPayload = {
   toEmail: string;
   clientFirstName: string;
@@ -21,6 +23,9 @@ export type BookingEmailPayload = {
   amountDue: number;
   /** When true, subject/body reflect a status confirmation rather than a new booking. */
   isStatusUpdate?: boolean;
+  /** App appointment vs custom-link (web) booking — drives Reschedule/Cancel deep links. */
+  source: BookingEmailSource;
+  appointmentId: string;
 };
 
 function escapeHtml(value: string): string {
@@ -92,6 +97,35 @@ function bookingHomeUrl(customLink: string | null): string {
   return "https://booqlyapp.com";
 }
 
+/**
+ * App bookings → universal / custom-scheme link that opens the exact appointment in-app.
+ * Web custom-link bookings → subdomain appointment page for that exact booking.
+ */
+function buildManageUrl(
+  payload: BookingEmailPayload,
+  action: "reschedule" | "cancel"
+): string {
+  const id = encodeURIComponent(payload.appointmentId);
+  const q = `action=${action}`;
+
+  if (payload.source === "app") {
+    return `https://api.booqlyapp.com/appointments/${id}?${q}`;
+  }
+
+  const home = bookingHomeUrl(payload.customLink);
+  return `${home}/appointment/${id}?${q}`;
+}
+
+function detailRow(label: string, value: string, withBorder: boolean): string {
+  const border = withBorder
+    ? "border-bottom:1px solid #E5E7EB;"
+    : "border-bottom:none;";
+  return `<tr>
+                  <td style="padding:12px 0;${border}color:#6B7280;font-size:14px;vertical-align:top;">${label}</td>
+                  <td style="padding:12px 0;${border}text-align:right;font-weight:700;color:#111827;font-size:14px;vertical-align:top;">${value}</td>
+                </tr>`;
+}
+
 function buildHtml(payload: BookingEmailPayload): string {
   const { dateLong, time } = formatDateTimeParts(payload.dateTime);
   const first = escapeHtml(payload.clientFirstName || "there");
@@ -105,10 +139,19 @@ function buildHtml(payload: BookingEmailPayload): string {
     ? escapeHtml(payload.stylistName)
     : "No preference";
   const calendarUrl = buildGoogleCalendarUrl(payload);
-  const homeUrl = bookingHomeUrl(payload.customLink);
+  const rescheduleUrl = buildManageUrl(payload, "reschedule");
+  const cancelUrl = buildManageUrl(payload, "cancel");
   const total = formatMoney(payload.totalPrice);
   const deposit = formatMoney(payload.depositPaid);
   const due = formatMoney(payload.amountDue);
+
+  const detailRows: string[] = [];
+  // Always put a separator under every detail row (including the last).
+  detailRows.push(detailRow("Services", services, true));
+  if (addOns) {
+    detailRows.push(detailRow("Add-on", addOns, true));
+  }
+  detailRows.push(detailRow("Stylist", stylist, true));
 
   return `<!DOCTYPE html>
 <html>
@@ -123,63 +166,52 @@ function buildHtml(payload: BookingEmailPayload): string {
       <td align="center">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;">
           <tr>
-            <td style="padding:28px 28px 8px 28px;">
-              <div style="font-family:Georgia,'Times New Roman',serif;font-size:18px;font-weight:700;color:#111827;margin-bottom:10px;">${business}</div>
-              <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.25;font-weight:700;color:#111827;margin-bottom:16px;">You're booked, ${first}!</div>
-              <a href="${calendarUrl}" style="display:inline-block;padding:10px 14px;border:1.5px solid #759CC9;border-radius:10px;color:#3B629B;text-decoration:none;font-size:14px;font-weight:600;">
+            <td align="center" style="padding:28px 28px 8px 28px;text-align:center;">
+              <div style="font-family:Georgia,'Times New Roman',serif;font-size:18px;font-weight:700;color:#111827;margin:0 0 10px 0;text-align:center;">${business}</div>
+              <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.25;font-weight:700;color:#111827;margin:0 0 18px 0;text-align:center;">You're booked, ${first}!</div>
+              <a href="${calendarUrl}" style="display:inline-block;padding:10px 16px;border:1.5px solid #759CC9;border-radius:10px;color:#3B629B;text-decoration:none;font-size:14px;font-weight:600;text-align:center;">
                 📅 Add to Calendar
               </a>
             </td>
           </tr>
           <tr>
             <td style="padding:18px 28px 8px 28px;">
-              <div style="background:#E8F1F9;border-radius:12px;padding:14px 16px;">
-                <div style="font-size:15px;font-weight:700;color:#3B629B;">${escapeHtml(dateLong)} • ${escapeHtml(time)}</div>
-                ${
-                  address
-                    ? `<div style="font-size:13px;color:#5B82C2;margin-top:4px;">${address}</div>`
-                    : ""
-                }
-              </div>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#E8F1F9;border-radius:12px;">
+                <tr>
+                  <td align="center" style="padding:16px 16px;text-align:center;">
+                    <div style="font-size:15px;font-weight:700;color:#3B629B;text-align:center;">${escapeHtml(dateLong)} • ${escapeHtml(time)}</div>
+                    ${
+                      address
+                        ? `<div style="font-size:13px;color:#5B82C2;margin-top:6px;text-align:center;">${address}</div>`
+                        : ""
+                    }
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
           <tr>
-            <td style="padding:18px 28px 8px 28px;">
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:14px;">
-                <tr>
-                  <td style="padding:8px 0;color:#6B7280;">Services</td>
-                  <td style="padding:8px 0;text-align:right;font-weight:700;color:#111827;">${services}</td>
-                </tr>
-                ${
-                  addOns
-                    ? `<tr>
-                  <td style="padding:8px 0;color:#6B7280;">Add-on</td>
-                  <td style="padding:8px 0;text-align:right;font-weight:700;color:#111827;">${addOns}</td>
-                </tr>`
-                    : ""
-                }
-                <tr>
-                  <td style="padding:8px 0;color:#6B7280;">Stylist</td>
-                  <td style="padding:8px 0;text-align:right;font-weight:700;color:#111827;">${stylist}</td>
-                </tr>
+            <td style="padding:10px 28px 8px 28px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:14px;border-collapse:collapse;">
+                ${detailRows.join("\n")}
               </table>
             </td>
           </tr>
           <tr>
             <td style="padding:12px 28px 8px 28px;">
               <div style="background:#F3F4F6;border-radius:12px;padding:14px 16px;">
-                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:14px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:14px;border-collapse:collapse;">
                   <tr>
-                    <td style="padding:6px 0;color:#6B7280;">Total Price</td>
-                    <td style="padding:6px 0;text-align:right;font-weight:600;color:#111827;">${total}</td>
+                    <td style="padding:8px 0;color:#6B7280;">Total Price</td>
+                    <td style="padding:8px 0;text-align:right;font-weight:600;color:#111827;">${total}</td>
                   </tr>
                   <tr>
-                    <td style="padding:6px 0;color:#6B7280;">Deposit Paid</td>
-                    <td style="padding:6px 0;text-align:right;font-weight:600;color:#111827;">– ${deposit}</td>
+                    <td style="padding:8px 0;border-bottom:1px solid #E5E7EB;color:#6B7280;">Deposit Paid</td>
+                    <td style="padding:8px 0;border-bottom:1px solid #E5E7EB;text-align:right;font-weight:600;color:#111827;">– ${deposit}</td>
                   </tr>
                   <tr>
-                    <td style="padding:10px 0 4px 0;font-weight:700;color:#111827;font-size:15px;">Amount Due at Appointment</td>
-                    <td style="padding:10px 0 4px 0;text-align:right;font-weight:700;color:#111827;font-size:15px;">${due}</td>
+                    <td style="padding:12px 0 4px 0;font-weight:700;color:#111827;font-size:15px;">Amount Due at Appointment</td>
+                    <td style="padding:12px 0 4px 0;text-align:right;font-weight:700;color:#111827;font-size:15px;">${due}</td>
                   </tr>
                 </table>
               </div>
@@ -190,10 +222,10 @@ function buildHtml(payload: BookingEmailPayload): string {
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                 <tr>
                   <td width="48%" style="padding-right:6px;">
-                    <a href="${homeUrl}" style="display:block;text-align:center;background:#759CC9;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 10px;border-radius:10px;">Reschedule</a>
+                    <a href="${rescheduleUrl}" style="display:block;text-align:center;background:#759CC9;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 10px;border-radius:10px;">Reschedule</a>
                   </td>
                   <td width="48%" style="padding-left:6px;">
-                    <a href="${homeUrl}" style="display:block;text-align:center;background:#ffffff;color:#DC2626;text-decoration:none;font-weight:700;font-size:14px;padding:11px 10px;border-radius:10px;border:1.5px solid #FECACA;">Cancel</a>
+                    <a href="${cancelUrl}" style="display:block;text-align:center;background:#ffffff;color:#DC2626;text-decoration:none;font-weight:700;font-size:14px;padding:11px 10px;border-radius:10px;border:1.5px solid #FECACA;">Cancel</a>
                   </td>
                 </tr>
               </table>
@@ -229,6 +261,9 @@ function buildText(payload: BookingEmailPayload): string {
     `Total Price: ${formatMoney(payload.totalPrice)}`,
     `Deposit Paid: ${formatMoney(payload.depositPaid)}`,
     `Amount Due at Appointment: ${formatMoney(payload.amountDue)}`,
+    "",
+    `Reschedule: ${buildManageUrl(payload, "reschedule")}`,
+    `Cancel: ${buildManageUrl(payload, "cancel")}`,
     "",
     "Powered by Booqly",
   ]
@@ -408,6 +443,8 @@ export class BookingConfirmationEmailService {
       depositPaid: deposit,
       amountDue: remaining,
       isStatusUpdate: options?.isStatusUpdate === true,
+      source: "app",
+      appointmentId: appointment.id,
     });
   }
 
@@ -498,6 +535,8 @@ export class BookingConfirmationEmailService {
       depositPaid: deposit,
       amountDue: remaining,
       isStatusUpdate: options?.isStatusUpdate === true,
+      source: "web",
+      appointmentId: appointment.id,
     });
   }
 

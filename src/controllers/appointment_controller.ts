@@ -1713,6 +1713,83 @@ export const updateAppointmentPrice = async (
   }
 };
 
+/** Authenticated client: fetch one of their appointments by id (email deep links). */
+export const getClientAppointmentById = async (
+  req: any,
+  res: Response
+): Promise<Response> => {
+  try {
+    const userId = req.user?.id;
+    const { appointmentId } = req.params;
+
+    if (!userId || !appointmentId) {
+      return res.status(400).json({
+        status: false,
+        message: "Authentication and appointmentId are required.",
+      });
+    }
+
+    const appointment = await Appointment.findOne({
+      where: { id: appointmentId, userId },
+      include: [
+        {
+          model: Marketplace,
+          as: "marketplace",
+          attributes: [
+            "id",
+            "businessName",
+            "phoneNumber",
+            "address",
+            "latitude",
+            "longitude",
+            "imagesList",
+            "userId",
+            "customLink",
+          ],
+          include: [
+            {
+              model: Social,
+              as: "socials",
+              attributes: ["id", "insta", "tiktok", "facebook", "googlePlaceId"],
+            },
+          ],
+        },
+        {
+          model: Service,
+          as: "services",
+          through: { attributes: [] },
+          attributes: ["id", "name", "description", "price", "duration"],
+        },
+        {
+          model: User,
+          as: "assignedTeamMember",
+          attributes: ["id", "name", "profilePic"],
+          required: false,
+        },
+      ],
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        status: false,
+        message: "Appointment not found.",
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      message: "Appointment fetched successfully.",
+      data: appointment.toJSON(),
+    });
+  } catch (err: any) {
+    console.error("Error fetching client appointment by id:", err);
+    return res.status(500).json({
+      status: false,
+      message: `Internal server error: ${err.message || err}`,
+    });
+  }
+};
+
 // Get user's appointments (client-specific)
 export const getUserAppointments = async (
   req: any,

@@ -8,6 +8,9 @@ import {
   createExternalAppointmentWithDeposit,
   createDepositPaymentIntent,
   getExternalAppointments,
+  getPublicExternalAppointmentById,
+  cancelPublicExternalAppointment,
+  reschedulePublicExternalAppointment,
   updateExternalAppointmentStatus,
 } from "../controllers/external_appointment_controller";
 import { authenticateToken } from "../middlewares/auth.middleware";
@@ -22,6 +25,15 @@ router.get("/marketplace/:customLink", getMarketplaceByCustomLink);
 router.get("/available-slots", getAvailableTimeSlots);
 router.get("/bookable-dates", getBookableDates);
 router.get("/check-slot-availability", checkSlotAvailability);
+router.get("/external-appointments/:appointmentId", getPublicExternalAppointmentById);
+router.post(
+  "/external-appointments/:appointmentId/cancel",
+  cancelPublicExternalAppointment
+);
+router.put(
+  "/external-appointments/:appointmentId/reschedule",
+  reschedulePublicExternalAppointment
+);
 
 // Protected routes (authentication required)
 router.get("/external-appointments", authenticateToken, getExternalAppointments);
