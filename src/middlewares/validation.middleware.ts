@@ -139,9 +139,10 @@ export const schemas = {
   createTeamMember: Joi.object({
     name: Joi.string().trim().min(2).max(50).required(),
     email: Joi.string().trim().email({ tlds: { allow: false } }).required(),
-    password: Joi.string().min(8).pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)')).required()
+    password: Joi.string().min(8).pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[!@#$%&])')).required()
       .messages({
-        'string.pattern.base': 'Password must contain at least One lowercase letter, One uppercase letter, and one number'
+        'string.min': 'Password must be at least 8 characters and include uppercase, lowercase, number, and at least one special character.',
+        'string.pattern.base': 'Password must be at least 8 characters and include uppercase, lowercase, number, and at least one special character.',
       }),
     phone: Joi.string().trim().pattern(/^\+?[\d\s\-\(\)]+$/).optional().allow(null, ''),
     jobTitle: Joi.string().trim().max(100).optional().allow(null, ''),
@@ -165,9 +166,10 @@ export const schemas = {
     jobTitle: Joi.string().trim().max(100).optional().allow(null, ''),
     employmentStartDate: Joi.date().optional().allow(null),
     employmentEndDate: Joi.date().optional().allow(null),
-    password: Joi.string().min(8).pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)')).optional()
+    password: Joi.string().min(8).pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[!@#$%&])')).optional()
       .messages({
-        'string.pattern.base': 'Password must contain at least One lowercase letter, One uppercase letter, and one number'
+        'string.min': 'Password must be at least 8 characters and include uppercase, lowercase, number, and at least one special character.',
+        'string.pattern.base': 'Password must be at least 8 characters and include uppercase, lowercase, number, and at least one special character.',
       }),
   }).min(1).custom((value, helpers) => {
     if (value.employmentStartDate && value.employmentEndDate) {
