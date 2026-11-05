@@ -361,6 +361,10 @@ export class BookingConfirmationEmailService {
     });
   }
 
+  /**
+   * App appointments (client self-book OR provider/owner/TM booking for a client).
+   * Always emails the appointment's client (`Appointment.userId`).
+   */
   static async sendForAppAppointment(
     appointmentId: string,
     options?: { isStatusUpdate?: boolean }
@@ -377,6 +381,15 @@ export class BookingConfirmationEmailService {
             "address",
             "customLink",
             "businessEmail",
+            "userId",
+          ],
+          include: [
+            {
+              model: User,
+              as: "provider",
+              attributes: ["id", "name"],
+              required: false,
+            },
           ],
         },
         {
@@ -401,12 +414,13 @@ export class BookingConfirmationEmailService {
 
     const user = (appointment as any).user as User | undefined;
     const marketplace = (appointment as any).marketplace as
-      | Marketplace
+      | (Marketplace & { provider?: User })
       | undefined;
     const services = ((appointment as any).services || []) as Service[];
     const assignee = (appointment as any).assignedTeamMember as
       | User
       | undefined;
+    const marketplaceOwner = marketplace?.provider as User | undefined;
 
     if (!user?.email) {
       console.warn(
@@ -424,9 +438,12 @@ export class BookingConfirmationEmailService {
         ? Number(appointment.remainingBalance)
         : Math.max(total - deposit, 0);
 
+    // No Preference → label; else assigned TM; else solo/suite owner name.
     const stylistName = appointment.clientNoPreference
       ? "No preference"
-      : assignee?.name?.trim() || null;
+      : assignee?.name?.trim() ||
+        marketplaceOwner?.name?.trim() ||
+        null;
 
     await this.send({
       toEmail: user.email,

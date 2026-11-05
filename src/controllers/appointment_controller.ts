@@ -784,9 +784,20 @@ export const createProviderAppointment = async (
           as: "services",
           through: { attributes: [] },
         },
+        {
+          model: User,
+          as: "assignedTeamMember",
+          attributes: ["id", "name", "profilePic"],
+          required: false,
+        },
       ],
     });
 
+    // Same confirmation email as client self-book — goes to the selected client's
+    // email whenever solo / suite owner / team member books on their behalf.
+    console.log(
+      `[BookingEmail] Provider-created appointment ${newAppointment.id} → client ${client.email}`
+    );
     BookingConfirmationEmailService.queueSendForAppAppointment(
       newAppointment.id
     );
