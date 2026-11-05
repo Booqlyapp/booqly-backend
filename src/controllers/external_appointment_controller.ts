@@ -1773,7 +1773,7 @@ export const reschedulePublicExternalAppointment = async (
 
     BookingConfirmationEmailService.queueSendForExternalAppointment(
       appointmentId,
-      { isStatusUpdate: true }
+      { isUpdate: true }
     );
 
     return res.status(200).json({
@@ -1783,6 +1783,303 @@ export const reschedulePublicExternalAppointment = async (
     });
   } catch (err: any) {
     console.error("Error rescheduling public external appointment:", err);
+    return res.status(500).json({
+      status: false,
+      message: `Internal server error: ${err.message || err}`,
+    });
+  }
+};
+
+/**
+ * Provider/owner/TM edit of a confirmed web (custom-link) appointment.
+ * Keeps status as confirmed — client is not asked to re-confirm. Emails the client.
+ */
+export const updateProviderExternalAppointment = async (
+  req: any,
+  res: Response
+): Promise<Response> => {
+  const transaction = await sequelize.transaction();
+  try {
+    const requester = req.user as User;
+    if (!requester || (requester.role !== "solo" && requester.role !== "suite")) {
+      await transaction.rollback();
+      return res.status(403).json({
+        status: false,
+        message: "Only providers can edit appointments.",
+      });
+    }
+
+    const {
+      appointmentId,
+      dateTime,
+      price,
+      services,
+      assignedTeamMemberId,
+    } = req.body as {
+      appointmentId?: string;
+      dateTime?: string;
+      price?: number;
+      services?: Array<{
+        serviceId: string;
+        addOnIds?: string[];
+      }>;
+      assignedTeamMemberId?: string | null;
+    };
+
+    if (
+      !appointmentId ||
+      !dateTime ||
+      price == null ||
+      !services ||
+      !Array.isArray(services) ||
+      services.length === 0
+    ) {
+      await transaction.rollback();
+      return res.status(400).json({
+        status: false,
+        message:
+          "Missing required fields: appointmentId, dateTime, price, and services.",
+      });
+    }
+
+    const appointment = await ExternalAppointment.findByPk(appointmentId, {
+      transaction,
+    });
+    if (!appointment) {
+      await transaction.rollback();
+      return res.status(404).json({
+        status: false,
+        message: "Appointment not found.",
+      });
+    }
+
+    if (appointment.status !== "confirmed") {
+      await transaction.rollback();
+      return res.status(400).json({
+        status: false,
+        message:
+          "Only confirmed appointments can be edited. Confirm the booking first.",
+      });
+    }
+
+    const marketplace = await Marketplace.findByPk(appointment.marketplaceId, {
+      transaction,
+    });
+    if (!marketplace || !marketplace.userId) {
+      await transaction.rollback();
+      return res.status(404).json({
+        status: false,
+        message: "Marketplace not found.",
+      });
+    }
+
+    const isMarketplaceOwner = marketplace.userId === requester.id;
+    const isTeamMemberOfMarketplace =
+      requester.isTeamMember === true &&
+      requester.teamOwnerId === marketplace.userId;
+    if (!isMarketplaceOwner && !isTeamMemberOfMarketplace) {
+      await transaction.rollback();
+      return res.status(403).json({
+        status: false,
+        message: "You do not have access to this marketplace.",
+      });
+    }
+
+    const bookingDateTime = parseBookingDateTime(dateTime);
+    if (Number.isNaN(bookingDateTime.getTime())) {
+      await transaction.rollback();
+      return res.status(400).json({
+        status: false,
+        message: "dateTime must be a valid ISO date.",
+      });
+    }
+
+    const serviceIds = services.map((s) => s.serviceId);
+    const foundServices = await Service.findAll({
+      where: {
+        id: { [Op.in]: serviceIds },
+        marketplaceId: appointment.marketplaceId,
+        deletedAt: null,
+      },
+      include: [
+        {
+          model: ServiceAddOn,
+          as: "addOns",
+          where: { isActive: true, deletedAt: null },
+          required: false,
+        },
+      ],
+      transaction,
+    });
+    if (foundServices.length !== serviceIds.length) {
+      await transaction.rollback();
+      return res.status(404).json({
+        status: false,
+        message: "One or more services not found for this marketplace.",
+      });
+    }
+
+    const scheduleCheck = await ScheduleAvailabilityService.assertOpenAt(
+      appointment.marketplaceId,
+      bookingDateTime
+    );
+    if (!scheduleCheck.allowed) {
+      await transaction.rollback();
+      return res.status(403).json({
+        status: false,
+        reason: scheduleCheck.reason,
+        message:
+          scheduleCheck.message ||
+          "This date or time is unavailable on your schedule.",
+      });
+    }
+
+    if (
+      await WaitlistService.isSlotBlocked(
+        appointment.marketplaceId,
+        bookingDateTime
+      )
+    ) {
+      await transaction.rollback();
+      return res.status(409).json({
+        status: false,
+        reason: "blocked",
+        message: "This time is blocked and cannot be booked.",
+      });
+    }
+
+    const primaryService =
+      foundServices.find((s: any) => s.id === services[0].serviceId) ||
+      foundServices[0];
+    const serviceProviderIds = (primaryService?.providerTeamMemberIds || []).map(
+      String
+    );
+
+    let resolvedAssignedTeamMemberId: string | null = null;
+    let clientNoPreference = false;
+
+    if (serviceProviderIds.length > 0) {
+      const assignee = await WaitlistService.resolveServiceTeamAssignee({
+        marketplaceId: appointment.marketplaceId,
+        dateTime: bookingDateTime,
+        serviceProviderIds,
+        teamOwnerId: String(marketplace.userId),
+        assignedTeamMemberId,
+        transaction,
+        excludeExternalAppointmentId: appointment.id,
+      });
+      if (!assignee.ok) {
+        await transaction.rollback();
+        return res.status(409).json({
+          status: false,
+          reason: assignee.reason,
+          message: assignee.message,
+        });
+      }
+      resolvedAssignedTeamMemberId = assignee.assignedTeamMemberId;
+      clientNoPreference = WaitlistService.isClientNoPreference(
+        assignedTeamMemberId
+      );
+    } else {
+      const occupied = await WaitlistService.isSlotOccupied(
+        appointment.marketplaceId,
+        bookingDateTime,
+        {
+          excludeExternalAppointmentId: appointment.id,
+          ignoreBlockedTimes: true,
+        }
+      );
+      if (occupied) {
+        await transaction.rollback();
+        return res.status(409).json({
+          status: false,
+          reason: "occupied",
+          message: "This slot is fully booked.",
+        });
+      }
+    }
+
+    const servicesData = services.map((svc) => {
+      const found = foundServices.find((s: any) => s.id === svc.serviceId) as any;
+      const addOnIds = Array.isArray(svc.addOnIds) ? svc.addOnIds.map(String) : [];
+      const addOns = (found?.addOns || [])
+        .filter((a: any) => addOnIds.includes(String(a.id)))
+        .map((a: any) => ({
+          id: a.id,
+          title: a.title,
+          price: Number(a.price || 0),
+        }));
+      return {
+        serviceId: found.id,
+        serviceName: found.name,
+        price: Number(found.price || 0),
+        addOns,
+      };
+    });
+
+    const computedPrice = servicesData.reduce((sum, s) => {
+      const addOnTotal = (s.addOns || []).reduce(
+        (a: number, x: any) => a + Number(x.price || 0),
+        0
+      );
+      return sum + Number(s.price || 0) + addOnTotal;
+    }, 0);
+    const finalPrice = Number(price) > 0 ? Number(price) : computedPrice;
+
+    const oldDateTime = new Date(appointment.dateTime);
+
+    await appointment.update(
+      {
+        dateTime: bookingDateTime,
+        price: finalPrice,
+        servicesData,
+        assignedTeamMemberId: resolvedAssignedTeamMemberId,
+        clientNoPreference,
+        // Keep status confirmed — no re-confirm required.
+      },
+      { transaction }
+    );
+
+    await transaction.commit();
+
+    await WaitlistService.processSlotAvailability(
+      appointment.marketplaceId,
+      oldDateTime
+    );
+    await WaitlistService.clearSlotWaitlist(
+      appointment.marketplaceId,
+      bookingDateTime
+    );
+
+    BookingConfirmationEmailService.queueSendForExternalAppointment(
+      appointment.id,
+      { isUpdate: true }
+    );
+
+    const updated = await ExternalAppointment.findByPk(appointment.id, {
+      include: [
+        {
+          model: Marketplace,
+          as: "marketplace",
+          attributes: ["id", "businessName", "address", "customLink", "phoneNumber"],
+        },
+        {
+          model: User,
+          as: "assignedTeamMember",
+          attributes: ["id", "name", "profilePic"],
+          required: false,
+        },
+      ],
+    });
+
+    return res.status(200).json({
+      status: true,
+      message: "Appointment updated successfully.",
+      data: updated?.toJSON() ?? appointment.toJSON(),
+    });
+  } catch (err: any) {
+    await transaction.rollback();
+    console.error("Error updating provider external appointment:", err);
     return res.status(500).json({
       status: false,
       message: `Internal server error: ${err.message || err}`,

@@ -23,6 +23,8 @@ export type BookingEmailPayload = {
   amountDue: number;
   /** When true, subject/body reflect a status confirmation rather than a new booking. */
   isStatusUpdate?: boolean;
+  /** When true, subject/body reflect a provider edit / reschedule of an existing booking. */
+  isUpdate?: boolean;
   /** App appointment vs custom-link (web) booking — drives Reschedule/Cancel deep links. */
   source: BookingEmailSource;
   appointmentId: string;
@@ -144,6 +146,9 @@ function buildHtml(payload: BookingEmailPayload): string {
   const total = formatMoney(payload.totalPrice);
   const deposit = formatMoney(payload.depositPaid);
   const due = formatMoney(payload.amountDue);
+  const headline = payload.isUpdate
+    ? `Your appointment was updated, ${first}!`
+    : `You're booked, ${first}!`;
 
   const detailRows: string[] = [];
   // Always put a separator under every detail row (including the last).
@@ -168,7 +173,7 @@ function buildHtml(payload: BookingEmailPayload): string {
           <tr>
             <td align="center" style="padding:28px 28px 8px 28px;text-align:center;">
               <div style="font-family:Georgia,'Times New Roman',serif;font-size:18px;font-weight:700;color:#111827;margin:0 0 10px 0;text-align:center;">${business}</div>
-              <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.25;font-weight:700;color:#111827;margin:0 0 18px 0;text-align:center;">You're booked, ${first}!</div>
+              <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.25;font-weight:700;color:#111827;margin:0 0 18px 0;text-align:center;">${headline}</div>
               <a href="${calendarUrl}" style="display:inline-block;padding:10px 16px;border:1.5px solid #759CC9;border-radius:10px;color:#3B629B;text-decoration:none;font-size:14px;font-weight:600;text-align:center;">
                 📅 Add to Calendar
               </a>
@@ -246,8 +251,11 @@ function buildHtml(payload: BookingEmailPayload): string {
 
 function buildText(payload: BookingEmailPayload): string {
   const { dateLong, time } = formatDateTimeParts(payload.dateTime);
+  const headline = payload.isUpdate
+    ? `Your appointment was updated, ${payload.clientFirstName || "there"}!`
+    : `You're booked, ${payload.clientFirstName || "there"}!`;
   return [
-    `You're booked, ${payload.clientFirstName || "there"}!`,
+    headline,
     "",
     `${dateLong} • ${time}`,
     payload.businessAddress || "",
@@ -332,9 +340,11 @@ export class BookingConfirmationEmailService {
       process.env.BREVO_VERIFIED_SENDER || "info@booqlyapp.com";
     const { subjectWhen } = formatDateTimeParts(payload.dateTime);
     const servicesLabel = payload.serviceNames.join(", ") || "Appointment";
-    const subjectPrefix = payload.isStatusUpdate
-      ? "Appointment confirmed"
-      : "New appointment";
+    const subjectPrefix = payload.isUpdate
+      ? "Appointment updated"
+      : payload.isStatusUpdate
+        ? "Appointment confirmed"
+        : "New appointment";
     const subject = `${subjectPrefix}: ${servicesLabel} (${payload.clientFullName}) - ${subjectWhen} with ${payload.businessName}`;
 
     const transporter = this.createTransporter();
@@ -367,7 +377,7 @@ export class BookingConfirmationEmailService {
    */
   static async sendForAppAppointment(
     appointmentId: string,
-    options?: { isStatusUpdate?: boolean }
+    options?: { isStatusUpdate?: boolean; isUpdate?: boolean }
   ): Promise<void> {
     const appointment = await Appointment.findByPk(appointmentId, {
       include: [
@@ -460,6 +470,7 @@ export class BookingConfirmationEmailService {
       depositPaid: deposit,
       amountDue: remaining,
       isStatusUpdate: options?.isStatusUpdate === true,
+      isUpdate: options?.isUpdate === true,
       source: "app",
       appointmentId: appointment.id,
     });
@@ -467,7 +478,7 @@ export class BookingConfirmationEmailService {
 
   static async sendForExternalAppointment(
     appointmentId: string,
-    options?: { isStatusUpdate?: boolean }
+    options?: { isStatusUpdate?: boolean; isUpdate?: boolean }
   ): Promise<void> {
     const appointment = await ExternalAppointment.findByPk(appointmentId, {
       include: [
@@ -552,6 +563,7 @@ export class BookingConfirmationEmailService {
       depositPaid: deposit,
       amountDue: remaining,
       isStatusUpdate: options?.isStatusUpdate === true,
+      isUpdate: options?.isUpdate === true,
       source: "web",
       appointmentId: appointment.id,
     });
@@ -559,7 +571,7 @@ export class BookingConfirmationEmailService {
 
   static queueSendForAppAppointment(
     appointmentId: string,
-    options?: { isStatusUpdate?: boolean }
+    options?: { isStatusUpdate?: boolean; isUpdate?: boolean }
   ): void {
     void this.sendForAppAppointment(appointmentId, options).catch((err) => {
       console.error(
@@ -571,7 +583,7 @@ export class BookingConfirmationEmailService {
 
   static queueSendForExternalAppointment(
     appointmentId: string,
-    options?: { isStatusUpdate?: boolean }
+    options?: { isStatusUpdate?: boolean; isUpdate?: boolean }
   ): void {
     void this.sendForExternalAppointment(appointmentId, options).catch(
       (err) => {

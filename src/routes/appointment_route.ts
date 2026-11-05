@@ -11,6 +11,7 @@ import {
   updateAppointmentPaymentStatus,
   updateAppointmentPrice,
   updateAppointmentStatus,
+  updateProviderAppointment,
 } from "../controllers/appointment_controller";
 import { authenticateToken, requireRole } from "../middlewares/auth.middleware";
 import { requireClientIdentityDocument } from "../middlewares/client-verification.middleware";
@@ -23,6 +24,12 @@ router.post(
   authenticateToken,
   requireRole(["solo", "suite"]),
   createProviderAppointment
+);
+router.put(
+  "/update-provider-appointment",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  updateProviderAppointment
 );
 router.post("/:appointmentId/payment-intent", authenticateToken, createAppointmentPaymentIntent);
 router.get("/get-appointments", authenticateToken, getAppointments);

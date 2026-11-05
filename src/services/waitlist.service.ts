@@ -114,6 +114,7 @@ export class WaitlistService {
     dateTime: Date,
     options?: {
       excludeAppointmentId?: string;
+      excludeExternalAppointmentId?: string;
       /** When true, ignore appointments/external and only treat blocked times as occupied. */
       ignoreAppointments?: boolean;
       /**
@@ -150,6 +151,9 @@ export class WaitlistService {
 
     const externalWhere: Record<string, unknown> = {
       marketplaceId,
+      ...(options?.excludeExternalAppointmentId
+        ? { id: { [Op.ne]: options.excludeExternalAppointmentId } }
+        : {}),
       status: { [Op.in]: ACTIVE_EXTERNAL_APPOINTMENT_STATUSES },
       dateTime: { [Op.between]: [start, end] },
     };
@@ -187,9 +191,18 @@ export class WaitlistService {
     candidateIds: string[];
     teamOwnerId: string;
     transaction?: Transaction;
+    excludeAppointmentId?: string;
+    excludeExternalAppointmentId?: string;
   }): Promise<string | null> {
-    const { marketplaceId, dateTime, candidateIds, teamOwnerId, transaction } =
-      params;
+    const {
+      marketplaceId,
+      dateTime,
+      candidateIds,
+      teamOwnerId,
+      transaction,
+      excludeAppointmentId,
+      excludeExternalAppointmentId,
+    } = params;
 
     const free: Array<{ id: string; bookingCount: number }> = [];
 
@@ -208,6 +221,8 @@ export class WaitlistService {
       const occupied = await this.isSlotOccupied(marketplaceId, dateTime, {
         assignedTeamMemberId: memberId,
         ignoreBlockedTimes: true,
+        excludeAppointmentId,
+        excludeExternalAppointmentId,
       });
       if (occupied) continue;
 
@@ -271,6 +286,8 @@ export class WaitlistService {
     teamOwnerId: string;
     assignedTeamMemberId?: string | null;
     transaction?: Transaction;
+    excludeAppointmentId?: string;
+    excludeExternalAppointmentId?: string;
   }): Promise<
     | { ok: true; assignedTeamMemberId: string | null }
     | {
@@ -286,6 +303,8 @@ export class WaitlistService {
       teamOwnerId,
       assignedTeamMemberId,
       transaction,
+      excludeAppointmentId,
+      excludeExternalAppointmentId,
     } = params;
 
     if (!serviceProviderIds.length) {
@@ -303,6 +322,8 @@ export class WaitlistService {
         candidateIds: serviceProviderIds,
         teamOwnerId,
         transaction,
+        excludeAppointmentId,
+        excludeExternalAppointmentId,
       });
       if (!picked) {
         return {
@@ -342,6 +363,8 @@ export class WaitlistService {
     const memberOccupied = await this.isSlotOccupied(marketplaceId, dateTime, {
       assignedTeamMemberId: assignedMember.id,
       ignoreBlockedTimes: true,
+      excludeAppointmentId,
+      excludeExternalAppointmentId,
     });
     if (memberOccupied) {
       return {

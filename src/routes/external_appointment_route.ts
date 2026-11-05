@@ -12,8 +12,9 @@ import {
   cancelPublicExternalAppointment,
   reschedulePublicExternalAppointment,
   updateExternalAppointmentStatus,
+  updateProviderExternalAppointment,
 } from "../controllers/external_appointment_controller";
-import { authenticateToken } from "../middlewares/auth.middleware";
+import { authenticateToken, requireRole } from "../middlewares/auth.middleware";
 
 const router = Router();
 
@@ -38,5 +39,11 @@ router.put(
 // Protected routes (authentication required)
 router.get("/external-appointments", authenticateToken, getExternalAppointments);
 router.put("/update-external-appointment-status", authenticateToken, updateExternalAppointmentStatus);
+router.put(
+  "/update-provider-external-appointment",
+  authenticateToken,
+  requireRole(["solo", "suite"]),
+  updateProviderExternalAppointment
+);
 
 export default router;
