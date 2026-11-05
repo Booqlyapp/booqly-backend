@@ -1848,14 +1848,8 @@ export const updateExternalAppointmentStatus = async (
       );
     }
 
-    const nextStatus = status.toLowerCase();
-    // Notify client when provider/owner/team confirms (or otherwise updates) status.
-    if (previousStatus !== nextStatus && nextStatus !== "canceled") {
-      BookingConfirmationEmailService.queueSendForExternalAppointment(
-        appointmentId,
-        { isStatusUpdate: true }
-      );
-    }
+    // No confirmation email on status change — emails only fire on booking create
+    // (client/web book or provider/owner/TM book-for-client).
 
     return res.status(200).json({
       status: true,

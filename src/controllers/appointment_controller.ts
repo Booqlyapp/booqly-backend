@@ -1597,18 +1597,8 @@ export const updateAppointmentStatus = async (
       });
     }
 
-    // Provider/owner confirmed the booking (Confirm action → availed) or
-    // otherwise updated status — notify the client with the confirmation email.
-    if (
-      previousStatus !== status &&
-      status !== "canceled" &&
-      !isAppointmentOwner
-    ) {
-      BookingConfirmationEmailService.queueSendForAppAppointment(
-        appointmentId,
-        { isStatusUpdate: true }
-      );
-    }
+    // No confirmation email on status change — emails only fire on booking create
+    // (client self-book or provider/owner/TM book-for-client).
 
     return res.status(200).json({
       status: true,
