@@ -10,7 +10,12 @@ const router = Router();
 router.get("/appointments/:appointmentId", (req: Request, res: Response) => {
   const appointmentId = String(req.params.appointmentId || "").trim();
   const action = String(req.query.action || "reschedule").trim().toLowerCase();
-  const safeAction = action === "cancel" ? "cancel" : "reschedule";
+  const safeAction =
+    action === "cancel"
+      ? "cancel"
+      : action === "pay_deposit"
+        ? "pay_deposit"
+        : "reschedule";
 
   if (!appointmentId) {
     res.status(400).send("Missing appointment id");
@@ -20,7 +25,11 @@ router.get("/appointments/:appointmentId", (req: Request, res: Response) => {
   const deepLink = `booqly://appointments/${encodeURIComponent(appointmentId)}?action=${safeAction}`;
   const httpsLink = `https://api.booqlyapp.com/appointments/${encodeURIComponent(appointmentId)}?action=${safeAction}`;
   const title =
-    safeAction === "cancel" ? "Cancel your appointment" : "Reschedule your appointment";
+    safeAction === "cancel"
+      ? "Cancel your appointment"
+      : safeAction === "pay_deposit"
+        ? "Pay your deposit"
+        : "Reschedule your appointment";
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.status(200).send(`<!DOCTYPE html>

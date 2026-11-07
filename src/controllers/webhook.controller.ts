@@ -94,12 +94,17 @@ async function handlePaymentIntentEvent(event: Stripe.Event) {
       // Deposit-only payments leave a balance due at the appointment.
       const paymentStatus =
         deposit > 0 && remaining > 0 ? 'partially_paid' : 'paid';
-      await appointment.update({
+      const updates: Record<string, unknown> = {
         paymentStatus,
         paymentMethod,
-      });
+        depositExpiresAt: null,
+      };
+      // Provider manual "Send Payment Link" holds → confirmed once deposit lands.
+      if (appointment.status === 'pending_deposit') {
+        updates.status = 'confirmed';
+      }
+      await appointment.update(updates);
       console.log(`✅ Payment succeeded for appointment: ${appointmentId} (${paymentStatus}) - Payment Intent: ${paymentIntent.id}`);
-      // TODO: Send confirmation email/notification
       break;
     }
 

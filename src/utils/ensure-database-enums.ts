@@ -9,6 +9,9 @@ const ENUM_UPDATES = [
   `ALTER TYPE "enum_Notifications_type" ADD VALUE IF NOT EXISTS 'professional_rejected';`,
   `ALTER TYPE "enum_Notifications_type" ADD VALUE IF NOT EXISTS 'business_verified';`,
   `ALTER TYPE "enum_Notifications_type" ADD VALUE IF NOT EXISTS 'business_rejected';`,
+  `ALTER TYPE "enum_Appointments_status" ADD VALUE IF NOT EXISTS 'pending_deposit';`,
+  `ALTER TYPE "enum_Appointments_status" ADD VALUE IF NOT EXISTS 'confirmed';`,
+  `ALTER TYPE "enum_Appointments_status" ADD VALUE IF NOT EXISTS 'deposit_expired';`,
 ];
 
 export async function ensureDatabaseEnums(sequelize: Sequelize): Promise<void> {

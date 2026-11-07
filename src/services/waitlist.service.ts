@@ -7,7 +7,13 @@ import { Waitlist } from "../models/waitlist_model";
 import { User } from "../models/user_model";
 import { NotificationService } from "./notification.service";
 
-const ACTIVE_APPOINTMENT_STATUSES = ["pending", "postponed", "availed"];
+const ACTIVE_APPOINTMENT_STATUSES = [
+  "pending",
+  "pending_deposit",
+  "confirmed",
+  "postponed",
+  "availed",
+];
 const ACTIVE_EXTERNAL_APPOINTMENT_STATUSES = ["pending", "confirmed"];
 const ACTIVE_WAITLIST_STATUSES = ["waiting", "notified", "claimed"];
 

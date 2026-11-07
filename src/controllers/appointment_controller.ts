@@ -19,6 +19,7 @@ import { parseBookingDateTime } from "../utils/booking_datetime";
 import { remainingBalanceAfterPriceEdit } from "../utils/appointment_balance";
 import { BookingConfirmationEmailService } from "../services/booking_confirmation_email.service";
 import { NotificationService } from "../services/notification.service";
+import { ChatService } from "../services/chat.service";
 
 interface CreateAppointmentData {
   marketplaceId: string;
@@ -475,9 +476,12 @@ export const createProviderAppointment = async (
       remainingBalance,
       assignedTeamMemberId,
       allowScheduleConflict,
+      depositMode,
     } = req.body as CreateAppointmentData & {
       clientId?: string;
       allowScheduleConflict?: boolean;
+      /** Provider/owner manual book: send_payment_link | waive_deposit */
+      depositMode?: "send_payment_link" | "waive_deposit";
     };
 
     if (
@@ -730,6 +734,56 @@ export const createProviderAppointment = async (
       });
     }
 
+    // Resolve deposit for provider/owner manual booking options.
+    const mode =
+      depositMode === "send_payment_link" || depositMode === "waive_deposit"
+        ? depositMode
+        : null;
+
+    let resolvedDeposit =
+      depositAmount != null ? Number(depositAmount) : undefined;
+    let resolvedRemaining =
+      remainingBalance != null ? Number(remainingBalance) : undefined;
+    let resolvedStatus: Appointment["status"] = "pending";
+    let resolvedPaymentStatus =
+      (paymentStatus as Appointment["paymentStatus"]) ?? "pending";
+    let depositExpiresAt: Date | null = null;
+    let depositWaived = false;
+
+    if (mode === "send_payment_link" || mode === "waive_deposit") {
+      // Prefer explicit body deposit; else compute from primary service rules.
+      if (resolvedDeposit == null || !Number.isFinite(resolvedDeposit)) {
+        const primary = validServices.find((s) => s.id === services[0].serviceId) ||
+          validServices[0];
+        resolvedDeposit = computeServiceDepositAmount(primary, Number(price));
+      }
+      resolvedDeposit = Math.max(0, Number(resolvedDeposit) || 0);
+
+      if (mode === "send_payment_link") {
+        if (resolvedDeposit <= 0) {
+          await transaction?.rollback();
+          return res.status(400).json({
+            status: false,
+            message:
+              "This service has no deposit configured. Choose Waive Deposit, or set a deposit on the service.",
+          });
+        }
+        resolvedRemaining = Math.max(0, Number(price) - resolvedDeposit);
+        resolvedStatus = "pending_deposit";
+        resolvedPaymentStatus = "pending";
+        depositExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+        depositWaived = false;
+      } else {
+        // Option B: waive deposit — confirmed immediately, full balance at visit.
+        resolvedDeposit = 0;
+        resolvedRemaining = Number(price);
+        resolvedStatus = "confirmed";
+        resolvedPaymentStatus = "pending";
+        depositExpiresAt = null;
+        depositWaived = true;
+      }
+    }
+
     const newAppointment = await Appointment.create(
       {
         userId: client.id,
@@ -738,12 +792,14 @@ export const createProviderAppointment = async (
         assignedTeamMemberId: resolvedAssignedTeamMemberId,
         // Owner/provider picked the member — not a client No Preference booking.
         clientNoPreference: false,
-        paymentStatus: paymentStatus ?? "pending",
+        paymentStatus: resolvedPaymentStatus,
         dateTime: appointmentDate,
-        status: "pending",
+        status: resolvedStatus,
         price,
-        depositAmount,
-        remainingBalance,
+        depositAmount: resolvedDeposit,
+        remainingBalance: resolvedRemaining,
+        depositExpiresAt,
+        depositWaived,
       },
       { transaction }
     );
@@ -795,18 +851,77 @@ export const createProviderAppointment = async (
       ],
     });
 
-    // Same confirmation email as client self-book — goes to the selected client's
-    // email whenever solo / suite owner / team member books on their behalf.
-    console.log(
-      `[BookingEmail] Provider-created appointment ${newAppointment.id} → client ${client.email}`
-    );
-    BookingConfirmationEmailService.queueSendForAppAppointment(
-      newAppointment.id
-    );
+    if (mode === "send_payment_link") {
+      console.log(
+        `[BookingEmail] Deposit hold ${newAppointment.id} → client ${client.email}`
+      );
+      BookingConfirmationEmailService.queueDepositReservationEmail(
+        newAppointment.id
+      );
+
+      const payLink = BookingConfirmationEmailService.buildDepositPayLink(
+        newAppointment.id
+      );
+      const businessName =
+        (createdAppointment as any)?.marketplace?.businessName ||
+        "your provider";
+      const depositLabel = Number(resolvedDeposit || 0).toFixed(2);
+
+      void NotificationService.createNotification({
+        userId: client.id,
+        type: "booking_confirmation",
+        title: "Appointment reserved — pay deposit",
+        content: `Your appointment is reserved! Pay your $${depositLabel} deposit within 2 hours to lock it in: ${payLink}`,
+        data: {
+          appointmentId: newAppointment.id,
+          type: "pending_deposit",
+          action: "pay_deposit",
+        },
+        channels: {
+          push: true,
+          sms: true,
+          email: false,
+          in_app: true,
+        },
+      }).catch((err) =>
+        console.error("[BookingNotify] pending deposit notify failed:", err)
+      );
+
+      // In-app chat from provider → client with the same pay link.
+      const providerId = marketplace.userId;
+      if (providerId) {
+        try {
+          const conversation = await ChatService.getOrCreateConversation(
+            client.id,
+            providerId
+          );
+          await ChatService.sendMessage(
+            conversation.id,
+            providerId,
+            `Your appointment with ${businessName} is reserved! Click here to pay your $${depositLabel} deposit to lock it in (expires in 2 hours): ${payLink}`
+          );
+        } catch (err) {
+          console.error("[BookingChat] pending deposit chat failed:", err);
+        }
+      }
+    } else {
+      // Waive deposit or legacy create — standard confirmation email.
+      console.log(
+        `[BookingEmail] Provider-created appointment ${newAppointment.id} → client ${client.email}`
+      );
+      BookingConfirmationEmailService.queueSendForAppAppointment(
+        newAppointment.id
+      );
+    }
 
     return res.status(201).json({
       status: true,
-      message: "Appointment created successfully.",
+      message:
+        mode === "send_payment_link"
+          ? "Appointment reserved. Payment link sent to the client."
+          : mode === "waive_deposit"
+            ? "Appointment confirmed (deposit waived)."
+            : "Appointment created successfully.",
       data: createdAppointment?.toJSON() ?? newAppointment.toJSON(),
     });
   } catch (err: any) {
@@ -818,6 +933,20 @@ export const createProviderAppointment = async (
     });
   }
 };
+
+function computeServiceDepositAmount(
+  service: Service | undefined,
+  totalPrice: number
+): number {
+  if (!service || !service.requireDeposit) return 0;
+  const raw = Number(service.depositAmount ?? 0);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  const type = String(service.depositType || "fixed").toLowerCase();
+  if (type === "percentage") {
+    return Math.round(((totalPrice * raw) / 100) * 100) / 100;
+  }
+  return raw;
+}
 
 // Create a Stripe PaymentIntent for an existing appointment, split between
 // the platform (1.5%) and the provider's connected Stripe account (98.5%).
@@ -1567,8 +1696,11 @@ export const updateProviderAppointment = async (
       });
     }
 
-    // Only after confirmation (Confirm → availed). Never reset status.
-    if (appointment.status !== "availed") {
+    // Editable once confirmed (manual waive → confirmed, or Confirm → availed).
+    if (
+      appointment.status !== "availed" &&
+      appointment.status !== "confirmed"
+    ) {
       await transaction?.rollback();
       return res.status(400).json({
         status: false,

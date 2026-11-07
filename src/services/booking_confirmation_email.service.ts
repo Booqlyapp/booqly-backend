@@ -594,4 +594,171 @@ export class BookingConfirmationEmailService {
       }
     );
   }
+
+  static buildDepositPayLink(appointmentId: string): string {
+    return `https://api.booqlyapp.com/appointments/${encodeURIComponent(
+      appointmentId
+    )}?action=pay_deposit`;
+  }
+
+  static queueDepositReservationEmail(appointmentId: string): void {
+    void this.sendDepositReservationEmail(appointmentId).catch((err) => {
+      console.error(
+        `[BookingEmail] Deposit reservation ${appointmentId} failed:`,
+        err
+      );
+    });
+  }
+
+  static queueDepositExpiredEmail(appointmentId: string): void {
+    void this.sendDepositExpiredEmail(appointmentId).catch((err) => {
+      console.error(
+        `[BookingEmail] Deposit expired ${appointmentId} failed:`,
+        err
+      );
+    });
+  }
+
+  static async sendDepositReservationEmail(
+    appointmentId: string
+  ): Promise<void> {
+    const appointment = await Appointment.findByPk(appointmentId, {
+      include: [
+        { model: User, as: "user", attributes: ["id", "name", "email"] },
+        {
+          model: Marketplace,
+          as: "marketplace",
+          attributes: ["id", "businessName", "address"],
+        },
+        {
+          model: Service,
+          as: "services",
+          through: { attributes: [] },
+          attributes: ["id", "name"],
+        },
+      ],
+    });
+    if (!appointment) return;
+    const user = (appointment as any).user as User | undefined;
+    const marketplace = (appointment as any).marketplace as
+      | Marketplace
+      | undefined;
+    if (!user?.email) return;
+
+    const payLink = this.buildDepositPayLink(appointment.id);
+    const deposit = Number(appointment.depositAmount || 0);
+    const total = Number(appointment.price || 0);
+    const services = ((appointment as any).services || []) as Service[];
+    const serviceNames = services.map((s) => s.name).filter(Boolean).join(", ");
+    const { dateLong, time } = formatDateTimeParts(
+      new Date(appointment.dateTime)
+    );
+    const first =
+      (user.name || "").trim().split(/\s+/)[0] || "there";
+    const business = marketplace?.businessName || "Booqly";
+
+    const subject = `Deposit required to lock your appointment with ${business}`;
+    const text = [
+      `Your appointment is reserved, ${first}!`,
+      "",
+      `${dateLong} • ${time}`,
+      marketplace?.address || "",
+      `Services: ${serviceNames || "Service"}`,
+      `Total: ${formatMoney(total)}`,
+      `Deposit due now: ${formatMoney(deposit)} (pay within 2 hours)`,
+      "",
+      `Click here to pay your deposit to lock it in: ${payLink}`,
+      "",
+      "If the deposit isn't received within 2 hours, this reservation will expire and the slot will open again.",
+      "",
+      "Powered by Booqly",
+    ].join("\n");
+
+    const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;background:#F3F4F6;padding:24px;">
+      <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;">
+        <h1 style="font-size:20px;margin:0 0 12px;">Your appointment is reserved!</h1>
+        <p style="margin:0 0 12px;color:#374151;">Hi ${escapeHtml(first)}, your appointment with <strong>${escapeHtml(business)}</strong> is held for <strong>2 hours</strong>. Pay your deposit to lock it in.</p>
+        <p style="margin:0 0 8px;"><strong>${escapeHtml(dateLong)} • ${escapeHtml(time)}</strong></p>
+        <p style="margin:0 0 8px;">Services: ${escapeHtml(serviceNames || "Service")}</p>
+        <p style="margin:0 0 8px;">Deposit due: <strong>${formatMoney(deposit)}</strong></p>
+        <p style="margin:16px 0;"><a href="${payLink}" style="display:inline-block;background:#759CC9;color:#fff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:10px;">Pay deposit</a></p>
+        <p style="margin:0;color:#6B7280;font-size:13px;">Make sure to open this link while signed in as the client who was booked.</p>
+      </div></body></html>`;
+
+    await this.sendRaw({
+      toEmail: user.email,
+      businessName: business,
+      subject,
+      text,
+      html,
+    });
+  }
+
+  static async sendDepositExpiredEmail(appointmentId: string): Promise<void> {
+    const appointment = await Appointment.findByPk(appointmentId, {
+      include: [
+        { model: User, as: "user", attributes: ["id", "name", "email"] },
+        {
+          model: Marketplace,
+          as: "marketplace",
+          attributes: ["id", "businessName"],
+        },
+      ],
+    });
+    if (!appointment) return;
+    const user = (appointment as any).user as User | undefined;
+    const marketplace = (appointment as any).marketplace as
+      | Marketplace
+      | undefined;
+    if (!user?.email) return;
+
+    const first =
+      (user.name || "").trim().split(/\s+/)[0] || "there";
+    const business = marketplace?.businessName || "your provider";
+    const subject = `Booking reservation expired with ${business}`;
+    const text = [
+      `Hi ${first},`,
+      "",
+      "Your booking reservation has expired because the deposit wasn't received. Please rebook if you still want this slot!",
+      "",
+      "Powered by Booqly",
+    ].join("\n");
+    const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;padding:24px;">
+      <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;">
+        <h1 style="font-size:20px;margin:0 0 12px;">Reservation expired</h1>
+        <p>Hi ${escapeHtml(first)}, your booking reservation has expired because the deposit wasn't received. Please rebook if you still want this slot!</p>
+      </div></body></html>`;
+
+    await this.sendRaw({
+      toEmail: user.email,
+      businessName: business,
+      subject,
+      text,
+      html,
+    });
+  }
+
+  private static async sendRaw(params: {
+    toEmail: string;
+    businessName: string;
+    subject: string;
+    text: string;
+    html: string;
+  }): Promise<void> {
+    if (!params.toEmail?.trim()) return;
+    if (!process.env.BREVO_SMTP_LOGIN || !process.env.BREVO_SMTP_KEY) {
+      console.warn("[BookingEmail] Brevo SMTP not configured, skipping");
+      return;
+    }
+    const verifiedSender =
+      process.env.BREVO_VERIFIED_SENDER || "info@booqlyapp.com";
+    const transporter = this.createTransporter();
+    await transporter.sendMail({
+      from: `"${params.businessName} via Booqly" <${verifiedSender}>`,
+      to: params.toEmail.trim(),
+      subject: params.subject,
+      text: params.text,
+      html: params.html,
+    });
+  }
 }

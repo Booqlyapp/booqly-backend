@@ -3,6 +3,8 @@ import { createServer } from "http";
 import cors from "cors";
 import sequelize from "./config/database";
 import { ensureDatabaseEnums } from "./utils/ensure-database-enums";
+import { ensureAppointmentDepositColumns } from "./utils/ensure-appointment-deposit-columns";
+import { DepositExpiryService } from "./services/deposit_expiry.service";
 import { ensureReviewFlagsTable } from "./utils/ensure-review-flags-table";
 import { ensureContentReportsTable } from "./utils/ensure-content-reports-table";
 import { ensureAnnouncementsTable } from "./utils/ensure-announcements-table";
@@ -118,6 +120,7 @@ sequelize
   .authenticate()
   .then(async () => {
     await ensureDatabaseEnums(sequelize);
+    await ensureAppointmentDepositColumns(sequelize);
     await ensureReviewFlagsTable(sequelize);
     await ensureContentReportsTable(sequelize);
     await ensureAnnouncementsTable(sequelize);
@@ -128,6 +131,7 @@ sequelize
     console.log(`✅ ${process.env.NODE_ENV} Database connected successfully`);
     console.log(`📊 Database: ${sequelize.getDatabaseName()}`);
     WaitlistService.startProcessor();
+    DepositExpiryService.startProcessor();
   })
   .catch((err) => {
     console.error("❌ Unable to connect to the database:", err);

@@ -18,11 +18,23 @@ interface AppointmentAttributes {
   clientNoPreference?: boolean;
   paymentStatus: string | null;
   paymentMethod?: "apple_pay" | "stripe_card" | "paypal" | "cash" | "other" | null;
-  status: "pending" | "canceled" | "postponed" | "availed" | "no_show";
+  status:
+    | "pending"
+    | "pending_deposit"
+    | "confirmed"
+    | "canceled"
+    | "deposit_expired"
+    | "postponed"
+    | "availed"
+    | "no_show";
   dateTime: Date;
   price: number;
   depositAmount?: number;
   remainingBalance?: number;
+  /** When set, unpaid pending_deposit holds expire at this time. */
+  depositExpiresAt?: Date | null;
+  /** Provider/owner waived deposit for this booking. */
+  depositWaived?: boolean;
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
   deletedAt: CreationOptional<Date> | null;
@@ -43,11 +55,21 @@ export class Appointment
   declare clientNoPreference: CreationOptional<boolean>;
   declare paymentStatus: "pending" | "paid" | "failed" | "refunded" | "partially_paid";
   declare paymentMethod?: "apple_pay" | "stripe_card" | "paypal" | "cash" | "other" | null;
-  declare status: "pending" | "canceled" | "postponed" | "availed" | "no_show";
+  declare status:
+    | "pending"
+    | "pending_deposit"
+    | "confirmed"
+    | "canceled"
+    | "deposit_expired"
+    | "postponed"
+    | "availed"
+    | "no_show";
   declare dateTime: Date;
   declare price: number;
   declare depositAmount?: number;
   declare remainingBalance?: number;
+  declare depositExpiresAt: CreationOptional<Date | null>;
+  declare depositWaived: CreationOptional<boolean>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare deletedAt: CreationOptional<Date> | null;
@@ -112,7 +134,16 @@ export default function initAppointment(sequelize: Sequelize) {
         allowNull: true,
       },
       status: {
-        type: DataTypes.ENUM("pending", "canceled", "postponed", "availed", "no_show"),
+        type: DataTypes.ENUM(
+          "pending",
+          "pending_deposit",
+          "confirmed",
+          "canceled",
+          "deposit_expired",
+          "postponed",
+          "availed",
+          "no_show"
+        ),
         allowNull: false,
         defaultValue: "pending",
       },
@@ -131,6 +162,15 @@ export default function initAppointment(sequelize: Sequelize) {
       remainingBalance: {
         type: DataTypes.DECIMAL(10, 2),
         allowNull: true,
+      },
+      depositExpiresAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      depositWaived: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
       },
       createdAt: {
         type: DataTypes.DATE,
