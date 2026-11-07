@@ -16,7 +16,9 @@ import {
   getTeamMemberPermissionsForUser,
 } from "../utils/team_member_permission_helper";
 import { parseBookingDateTime } from "../utils/booking_datetime";
+import { remainingBalanceAfterPriceEdit } from "../utils/appointment_balance";
 import { BookingConfirmationEmailService } from "../services/booking_confirmation_email.service";
+import { NotificationService } from "../services/notification.service";
 
 interface CreateAppointmentData {
   marketplaceId: string;
@@ -1708,6 +1710,22 @@ export const updateProviderAppointment = async (
     }
 
     const oldDateTime = new Date(appointment.dateTime);
+    const newPrice = Number(price);
+    // Keep deposit already paid; roll any price increase into remaining balance
+    // (do not collect a second deposit).
+    const { remainingBalance } = remainingBalanceAfterPriceEdit({
+      oldPrice: Number(appointment.price || 0),
+      oldRemainingBalance: appointment.remainingBalance,
+      oldDepositAmount: appointment.depositAmount,
+      newPrice,
+    });
+    let nextPaymentStatus = appointment.paymentStatus;
+    if (remainingBalance > 0 && nextPaymentStatus === "paid") {
+      nextPaymentStatus = "partially_paid";
+    } else if (remainingBalance <= 0 && nextPaymentStatus === "partially_paid") {
+      // Price reduced to (or below) amount already paid — nothing left due.
+      nextPaymentStatus = "paid";
+    }
 
     await AppointmentServiceStatus.destroy({
       where: { appointmentId: appointment.id },
@@ -1724,11 +1742,14 @@ export const updateProviderAppointment = async (
     await appointment.update(
       {
         dateTime: appointmentDate,
-        price: Number(price),
+        price: newPrice,
+        remainingBalance,
+        paymentStatus: nextPaymentStatus,
         serviceId: services[0].serviceId,
         assignedTeamMemberId: resolvedAssignedTeamMemberId,
         clientNoPreference,
         // Keep status as availed — no re-confirm required.
+        // depositAmount is intentionally unchanged (already collected).
       },
       { transaction }
     );
@@ -1745,9 +1766,37 @@ export const updateProviderAppointment = async (
       appointment.id
     );
 
+    // Email includes updated total / deposit paid / amount due.
     BookingConfirmationEmailService.queueSendForAppAppointment(appointment.id, {
       isUpdate: true,
     });
+
+    // In-app + push + SMS for Booqly clients (email already sent above).
+    if (appointment.userId) {
+      void NotificationService.createNotification({
+        userId: appointment.userId,
+        type: "booking_confirmation",
+        title: "Appointment updated",
+        content: `Your appointment was updated. New total $${newPrice.toFixed(
+          2
+        )}. Amount due at appointment: $${remainingBalance.toFixed(2)}.`,
+        data: {
+          appointmentId: appointment.id,
+          type: "booking_update",
+        },
+        channels: {
+          push: true,
+          sms: true,
+          email: false,
+          in_app: true,
+        },
+      }).catch((err) => {
+        console.error(
+          `[BookingNotify] App appointment update ${appointment.id} failed:`,
+          err
+        );
+      });
+    }
 
     const updated = await Appointment.findByPk(appointment.id, {
       include: [

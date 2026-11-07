@@ -19,6 +19,7 @@ import {
   getTeamMemberPermissionsForUser,
 } from "../utils/team_member_permission_helper";
 import { parseBookingDateTime } from "../utils/booking_datetime";
+import { remainingBalanceAfterPriceEdit } from "../utils/appointment_balance";
 import { BookingConfirmationEmailService } from "../services/booking_confirmation_email.service";
 
 interface GetExternalAppointmentsQuery {
@@ -2027,15 +2028,25 @@ export const updateProviderExternalAppointment = async (
     const finalPrice = Number(price) > 0 ? Number(price) : computedPrice;
 
     const oldDateTime = new Date(appointment.dateTime);
+    // Keep deposit already paid; roll any price increase into remaining balance
+    // (do not collect a second deposit).
+    const { remainingBalance } = remainingBalanceAfterPriceEdit({
+      oldPrice: Number(appointment.price || 0),
+      oldRemainingBalance: appointment.remainingBalance,
+      oldDepositAmount: appointment.depositAmount,
+      newPrice: finalPrice,
+    });
 
     await appointment.update(
       {
         dateTime: bookingDateTime,
         price: finalPrice,
+        remainingBalance,
         servicesData,
         assignedTeamMemberId: resolvedAssignedTeamMemberId,
         clientNoPreference,
         // Keep status confirmed — no re-confirm required.
+        // depositAmount / depositPaid unchanged (already collected).
       },
       { transaction }
     );
