@@ -35,6 +35,10 @@ interface AppointmentAttributes {
   depositExpiresAt?: Date | null;
   /** Provider/owner waived deposit for this booking. */
   depositWaived?: boolean;
+  /** Client 24h reminder already sent for the current dateTime. */
+  reminder24hSentAt?: Date | null;
+  /** Client 1h reminder already sent for the current dateTime. */
+  reminder1hSentAt?: Date | null;
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
   deletedAt: CreationOptional<Date> | null;
@@ -70,6 +74,8 @@ export class Appointment
   declare remainingBalance?: number;
   declare depositExpiresAt: CreationOptional<Date | null>;
   declare depositWaived: CreationOptional<boolean>;
+  declare reminder24hSentAt: CreationOptional<Date | null>;
+  declare reminder1hSentAt: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare deletedAt: CreationOptional<Date> | null;
@@ -171,6 +177,14 @@ export default function initAppointment(sequelize: Sequelize) {
         type: DataTypes.BOOLEAN,
         allowNull: false,
         defaultValue: false,
+      },
+      reminder24hSentAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      reminder1hSentAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
       },
       createdAt: {
         type: DataTypes.DATE,

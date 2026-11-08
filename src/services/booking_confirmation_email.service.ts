@@ -619,6 +619,76 @@ export class BookingConfirmationEmailService {
     });
   }
 
+  /** Client-only 24h / 1h appointment reminder (app + web). */
+  static queueClientReminderEmail(params: {
+    toEmail: string;
+    clientName: string;
+    businessName: string;
+    businessAddress: string | null;
+    dateTime: Date;
+    serviceNames: string;
+    reminderKind: "24h" | "1h";
+    appointmentId: string;
+    source: BookingEmailSource;
+  }): void {
+    void this.sendClientReminderEmail(params).catch((err) => {
+      console.error(
+        `[BookingEmail] Reminder ${params.reminderKind} ${params.appointmentId} failed:`,
+        err
+      );
+    });
+  }
+
+  private static async sendClientReminderEmail(params: {
+    toEmail: string;
+    clientName: string;
+    businessName: string;
+    businessAddress: string | null;
+    dateTime: Date;
+    serviceNames: string;
+    reminderKind: "24h" | "1h";
+    appointmentId: string;
+    source: BookingEmailSource;
+  }): Promise<void> {
+    if (!params.toEmail?.trim()) return;
+
+    const first =
+      (params.clientName || "").trim().split(/\s+/)[0] || "there";
+    const label = params.reminderKind === "24h" ? "24 hours" : "1 hour";
+    const { dateLong, time } = formatDateTimeParts(params.dateTime);
+    const subject = `Reminder: appointment with ${params.businessName} in ${label}`;
+    const text = [
+      `Hi ${first},`,
+      "",
+      `This is a reminder that your appointment with ${params.businessName} is in ${label}.`,
+      "",
+      `${dateLong} • ${time}`,
+      params.businessAddress || "",
+      `Services: ${params.serviceNames}`,
+      "",
+      "Powered by Booqly",
+    ]
+      .filter((line, idx, arr) => !(line === "" && arr[idx - 1] === ""))
+      .join("\n");
+
+    const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;background:#F3F4F6;padding:24px;">
+      <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;">
+        <h1 style="font-size:20px;margin:0 0 12px;">Appointment reminder</h1>
+        <p style="margin:0 0 12px;color:#374151;">Hi ${escapeHtml(first)}, your appointment with <strong>${escapeHtml(params.businessName)}</strong> is in <strong>${label}</strong>.</p>
+        <p style="margin:0 0 8px;"><strong>${escapeHtml(dateLong)} • ${escapeHtml(time)}</strong></p>
+        ${params.businessAddress ? `<p style="margin:0 0 8px;color:#6B7280;">${escapeHtml(params.businessAddress)}</p>` : ""}
+        <p style="margin:0 0 8px;">Services: ${escapeHtml(params.serviceNames)}</p>
+      </div></body></html>`;
+
+    await this.sendRaw({
+      toEmail: params.toEmail,
+      businessName: params.businessName,
+      subject,
+      text,
+      html,
+    });
+  }
+
   static async sendDepositReservationEmail(
     appointmentId: string
   ): Promise<void> {

@@ -1761,7 +1761,12 @@ export const reschedulePublicExternalAppointment = async (
     }
 
     const oldDateTime = appointment.dateTime;
-    await appointment.update({ dateTime: bookingDateTime });
+    await appointment.update({
+      dateTime: bookingDateTime,
+      // Reschedule → allow 24h / 1h client reminders for the new time.
+      reminder24hSentAt: null,
+      reminder1hSentAt: null,
+    });
 
     await WaitlistService.processSlotAvailability(
       appointment.marketplaceId,
@@ -2047,6 +2052,9 @@ export const updateProviderExternalAppointment = async (
         clientNoPreference,
         // Keep status confirmed — no re-confirm required.
         // depositAmount / depositPaid unchanged (already collected).
+        // Reschedule → allow 24h / 1h client reminders for the new time.
+        reminder24hSentAt: null,
+        reminder1hSentAt: null,
       },
       { transaction }
     );

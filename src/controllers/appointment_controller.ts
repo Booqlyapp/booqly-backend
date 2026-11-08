@@ -1377,6 +1377,9 @@ export const updateAppointmentDateTime = async (
     // Step 4: Update the appointment's dateTime
     appointment.dateTime = newAppointmentDate;
     appointment.updatedAt = new Date(); // Update timestamp
+    // Reschedule → allow 24h / 1h client reminders for the new time.
+    (appointment as any).reminder24hSentAt = null;
+    (appointment as any).reminder1hSentAt = null;
     await appointment.save({ transaction });
 
     // Step 4: Commit transaction
@@ -1882,6 +1885,9 @@ export const updateProviderAppointment = async (
         clientNoPreference,
         // Keep status as availed — no re-confirm required.
         // depositAmount is intentionally unchanged (already collected).
+        // Reschedule → allow 24h / 1h client reminders for the new time.
+        reminder24hSentAt: null,
+        reminder1hSentAt: null,
       },
       { transaction }
     );

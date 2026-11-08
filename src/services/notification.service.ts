@@ -431,28 +431,13 @@ export class NotificationService {
   }
 
   /**
-   * Schedule appointment reminders
+   * @deprecated Real 24h/1h client reminders are handled by AppointmentReminderService
+   * (polls confirmed app + web bookings). Kept for compatibility — no-op.
    */
-  static async scheduleAppointmentReminders(appointmentId: string, appointmentDateTime: Date): Promise<void> {
-    try {
-      // This would typically use a job queue like Bull or Agenda
-      // For now, we'll create the notifications immediately
-      
-      const reminderTimes = [
-        { hours: 24, title: '24 Hour Reminder' },
-        { hours: 1, title: '1 Hour Reminder' },
-      ];
-
-      for (const reminder of reminderTimes) {
-        const reminderTime = new Date(appointmentDateTime.getTime() - (reminder.hours * 60 * 60 * 1000));
-        
-        if (reminderTime > new Date()) {
-          // In a real implementation, you'd schedule this with a job queue
-          console.log(`Would schedule ${reminder.title} for appointment ${appointmentId} at ${reminderTime}`);
-        }
-      }
-    } catch (error) {
-      console.error('Error scheduling appointment reminders:', error);
-    }
+  static async scheduleAppointmentReminders(
+    _appointmentId: string,
+    _appointmentDateTime: Date
+  ): Promise<void> {
+    // No-op: AppointmentReminderService.startProcessor() sends client reminders.
   }
 }

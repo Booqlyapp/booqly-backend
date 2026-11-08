@@ -41,6 +41,10 @@ interface ExternalAppointmentAttributes {
   acceptedTerms: boolean;
   marketingConsent: boolean;
   notes?: string;
+  /** Client 24h reminder already sent for the current dateTime. */
+  reminder24hSentAt?: Date | null;
+  /** Client 1h reminder already sent for the current dateTime. */
+  reminder1hSentAt?: Date | null;
   createdAt: CreationOptional<Date>;
   updatedAt: CreationOptional<Date>;
   deletedAt: CreationOptional<Date> | null;
@@ -74,6 +78,8 @@ export class ExternalAppointment
   declare acceptedTerms: boolean;
   declare marketingConsent: boolean;
   declare notes?: string;
+  declare reminder24hSentAt: CreationOptional<Date | null>;
+  declare reminder1hSentAt: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare deletedAt: CreationOptional<Date> | null;
@@ -185,6 +191,14 @@ export default function initExternalAppointment(sequelize: Sequelize) {
       },
       notes: {
         type: DataTypes.TEXT,
+        allowNull: true,
+      },
+      reminder24hSentAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
+      reminder1hSentAt: {
+        type: DataTypes.DATE,
         allowNull: true,
       },
       createdAt: {
