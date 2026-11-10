@@ -1,9 +1,9 @@
 import { Router, Request, Response } from "express";
 
 /**
- * Browser fallback for email "Reschedule / Cancel" links on app bookings.
- * When the Booqly app is installed, Android/iOS App Links / custom scheme
- * open the appointment in-app. Otherwise this page offers an open-app button.
+ * Browser fallback for email appointment links.
+ * Prefer Android Intent URLs so Chrome handoff does not leave a black Flutter surface.
+ * Custom scheme + https remain as fallbacks.
  */
 const router = Router();
 
@@ -22,8 +22,11 @@ router.get("/appointments/:appointmentId", (req: Request, res: Response) => {
     return;
   }
 
-  const deepLink = `booqly://appointments/${encodeURIComponent(appointmentId)}?action=${safeAction}`;
-  const httpsLink = `https://api.booqlyapp.com/appointments/${encodeURIComponent(appointmentId)}?action=${safeAction}`;
+  const idEnc = encodeURIComponent(appointmentId);
+  const deepLink = `booqly://appointments/${idEnc}?action=${safeAction}`;
+  const httpsLink = `https://api.booqlyapp.com/appointments/${idEnc}?action=${safeAction}`;
+  // Chrome/Android: open the installed app by package instead of a bare custom-scheme hop.
+  const androidIntent = `intent://appointments/${idEnc}?action=${safeAction}#Intent;scheme=booqly;package=com.booqlyapp;S.browser_fallback_url=${encodeURIComponent(httpsLink)};end`;
   const title =
     safeAction === "cancel"
       ? "Cancel your appointment"
@@ -32,12 +35,12 @@ router.get("/appointments/:appointmentId", (req: Request, res: Response) => {
         : "Reschedule your appointment";
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
+  res.setHeader("Cache-Control", "no-store");
   res.status(200).send(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="refresh" content="0;url=${deepLink}" />
   <title>${title} · Booqly</title>
   <style>
     body { margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; background:#F3F4F6; color:#111827; }
@@ -52,10 +55,25 @@ router.get("/appointments/:appointmentId", (req: Request, res: Response) => {
   <div class="card">
     <h1>${title}</h1>
     <p>Opening this booking in the Booqly app…</p>
-    <a class="btn" href="${deepLink}">Open in Booqly</a>
+    <a id="openApp" class="btn" href="${androidIntent}">Open in Booqly</a>
+    <a class="secondary" href="${deepLink}">Use app link</a>
     <a class="secondary" href="${httpsLink}">Having trouble? Tap here</a>
   </div>
-  <script>window.location.href = ${JSON.stringify(deepLink)};</script>
+  <script>
+    (function () {
+      var ua = (navigator.userAgent || '').toLowerCase();
+      var isAndroid = ua.indexOf('android') !== -1;
+      var target = isAndroid
+        ? ${JSON.stringify(androidIntent)}
+        : ${JSON.stringify(deepLink)};
+      var btn = document.getElementById('openApp');
+      if (btn) btn.setAttribute('href', target);
+      // Slight delay so the page paints before leaving the browser (avoids blank handoff).
+      setTimeout(function () {
+        window.location.href = target;
+      }, 250);
+    })();
+  </script>
 </body>
 </html>`);
 });
