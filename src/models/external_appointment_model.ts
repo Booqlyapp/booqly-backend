@@ -73,7 +73,13 @@ export class ExternalAppointment
   declare email: string;
   declare phone: string;
   declare dateTime: Date;
-  declare status: "pending" | "confirmed" | "canceled" | "completed";
+  declare status:
+    | "pending"
+    | "confirmed"
+    | "canceled"
+    | "completed"
+    | "postponed"
+    | "availed";
   declare price: number;
   declare depositAmount?: number;
   declare remainingBalance?: number;
