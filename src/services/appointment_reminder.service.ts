@@ -46,20 +46,7 @@ export class AppointmentReminderService {
           [Op.lte]: in24h,
         },
       },
-      include: [
-        { model: User, as: "user", attributes: ["id", "name", "email"] },
-        {
-          model: Marketplace,
-          as: "marketplace",
-          attributes: ["id", "businessName", "address"],
-        },
-        {
-          model: Service,
-          as: "services",
-          through: { attributes: [] },
-          attributes: ["id", "name"],
-        },
-      ],
+      include: this.appReminderIncludes(),
       limit: 50,
     });
 
@@ -77,20 +64,7 @@ export class AppointmentReminderService {
           [Op.lte]: in1h,
         },
       },
-      include: [
-        { model: User, as: "user", attributes: ["id", "name", "email"] },
-        {
-          model: Marketplace,
-          as: "marketplace",
-          attributes: ["id", "businessName", "address"],
-        },
-        {
-          model: Service,
-          as: "services",
-          through: { attributes: [] },
-          attributes: ["id", "name"],
-        },
-      ],
+      include: this.appReminderIncludes(),
       limit: 50,
     });
 
@@ -112,13 +86,7 @@ export class AppointmentReminderService {
           [Op.lte]: in24h,
         },
       },
-      include: [
-        {
-          model: Marketplace,
-          as: "marketplace",
-          attributes: ["id", "businessName", "address"],
-        },
-      ],
+      include: this.externalReminderIncludes(),
       limit: 50,
     });
 
@@ -135,19 +103,81 @@ export class AppointmentReminderService {
           [Op.lte]: in1h,
         },
       },
-      include: [
-        {
-          model: Marketplace,
-          as: "marketplace",
-          attributes: ["id", "businessName", "address"],
-        },
-      ],
+      include: this.externalReminderIncludes(),
       limit: 50,
     });
 
     for (const appointment of due1h) {
       await this.sendExternalReminder(appointment, "1h");
     }
+  }
+
+  private static appReminderIncludes() {
+    return [
+      { model: User, as: "user", attributes: ["id", "name", "email"] },
+      {
+        model: Marketplace,
+        as: "marketplace",
+        attributes: ["id", "businessName", "address", "customLink", "userId"],
+        include: [
+          {
+            model: User,
+            as: "provider",
+            attributes: ["id", "name"],
+            required: false,
+          },
+        ],
+      },
+      {
+        model: Service,
+        as: "services",
+        through: { attributes: [] },
+        attributes: ["id", "name"],
+      },
+      {
+        model: User,
+        as: "assignedTeamMember",
+        attributes: ["id", "name"],
+        required: false,
+      },
+    ];
+  }
+
+  private static externalReminderIncludes() {
+    return [
+      {
+        model: Marketplace,
+        as: "marketplace",
+        attributes: ["id", "businessName", "address", "customLink", "userId"],
+        include: [
+          {
+            model: User,
+            as: "provider",
+            attributes: ["id", "name"],
+            required: false,
+          },
+        ],
+      },
+      {
+        model: User,
+        as: "assignedTeamMember",
+        attributes: ["id", "name"],
+        required: false,
+      },
+    ];
+  }
+
+  private static resolveProviderName(appointment: {
+    clientNoPreference?: boolean | null;
+    assignedTeamMember?: User;
+    marketplace?: Marketplace & { provider?: User };
+  }): string | null {
+    if (appointment.clientNoPreference) return null;
+    return (
+      appointment.assignedTeamMember?.name?.trim() ||
+      appointment.marketplace?.provider?.name?.trim() ||
+      null
+    );
   }
 
   private static async sendAppReminder(
@@ -159,7 +189,7 @@ export class AppointmentReminderService {
       if (!client?.id) return;
 
       const marketplace = (appointment as any).marketplace as
-        | Marketplace
+        | (Marketplace & { provider?: User })
         | undefined;
       const services = ((appointment as any).services || []) as Service[];
       const serviceNames = services
@@ -167,6 +197,11 @@ export class AppointmentReminderService {
         .filter(Boolean)
         .join(", ");
       const businessName = marketplace?.businessName || "your provider";
+      const providerName = this.resolveProviderName({
+        clientNoPreference: appointment.clientNoPreference,
+        assignedTeamMember: (appointment as any).assignedTeamMember,
+        marketplace,
+      });
       const label = kind === "24h" ? "24 hours" : "1 hour";
       const title =
         kind === "24h"
@@ -188,8 +223,10 @@ export class AppointmentReminderService {
         clientName: client.name || "there",
         businessName,
         businessAddress: marketplace?.address || null,
+        customLink: marketplace?.customLink || null,
         dateTime: new Date(appointment.dateTime),
         serviceNames: serviceNames || "Appointment",
+        providerName,
         reminderKind: kind,
         appointmentId: appointment.id,
         source: "app",
@@ -239,7 +276,7 @@ export class AppointmentReminderService {
       if (!email) return;
 
       const marketplace = (appointment as any).marketplace as
-        | Marketplace
+        | (Marketplace & { provider?: User })
         | undefined;
       const businessName = marketplace?.businessName || "your provider";
       const servicesData = (appointment.servicesData || []) as Array<{
@@ -254,6 +291,11 @@ export class AppointmentReminderService {
           .filter(Boolean)
           .join(" ")
           .trim() || "there";
+      const providerName = this.resolveProviderName({
+        clientNoPreference: appointment.clientNoPreference,
+        assignedTeamMember: (appointment as any).assignedTeamMember,
+        marketplace,
+      });
       const label = kind === "24h" ? "24 hours" : "1 hour";
       const title =
         kind === "24h"
@@ -274,8 +316,10 @@ export class AppointmentReminderService {
         clientName,
         businessName,
         businessAddress: marketplace?.address || null,
+        customLink: marketplace?.customLink || null,
         dateTime: new Date(appointment.dateTime),
         serviceNames: serviceNames || "Appointment",
+        providerName,
         reminderKind: kind,
         appointmentId: appointment.id,
         source: "web",

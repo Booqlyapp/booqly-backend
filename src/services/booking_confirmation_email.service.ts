@@ -99,12 +99,26 @@ function bookingHomeUrl(customLink: string | null): string {
   return "https://booqlyapp.com";
 }
 
+export type ClientReminderEmailParams = {
+  toEmail: string;
+  clientName: string;
+  businessName: string;
+  businessAddress: string | null;
+  customLink?: string | null;
+  dateTime: Date;
+  serviceNames: string;
+  providerName?: string | null;
+  reminderKind: "24h" | "1h";
+  appointmentId: string;
+  source: BookingEmailSource;
+};
+
 /**
  * App bookings → universal / custom-scheme link that opens the exact appointment in-app.
  * Web custom-link bookings → subdomain appointment page for that exact booking.
  */
 function buildManageUrl(
-  payload: BookingEmailPayload,
+  payload: Pick<BookingEmailPayload, "appointmentId" | "source" | "customLink">,
   action: "reschedule" | "cancel"
 ): string {
   const id = encodeURIComponent(payload.appointmentId);
@@ -116,6 +130,153 @@ function buildManageUrl(
 
   const home = bookingHomeUrl(payload.customLink);
   return `${home}/appointment/${id}?${q}`;
+}
+
+function buildClientReminderContent(params: ClientReminderEmailParams): {
+  subject: string;
+  text: string;
+  html: string;
+} {
+  const first =
+    (params.clientName || "").trim().split(/\s+/)[0] || "there";
+  const label = params.reminderKind === "24h" ? "24 hours" : "1 hour";
+  const headline =
+    params.reminderKind === "24h"
+      ? `See you tomorrow, ${first}!`
+      : `See you soon, ${first}!`;
+  const subtext = `Your appointment is in ${label}.`;
+  const { dateLong, time } = formatDateTimeParts(params.dateTime);
+  const whenLine = `${dateLong} · ${time}`;
+  const serviceLabel = (params.serviceNames || "Service").trim() || "Service";
+  const providerLabel =
+    (params.providerName || "").trim() || "No preference";
+  const address = (params.businessAddress || "").trim();
+  const customLink = params.customLink || null;
+
+  const managePayload = {
+    appointmentId: params.appointmentId,
+    source: params.source,
+    customLink,
+  };
+  const rescheduleUrl = buildManageUrl(managePayload, "reschedule");
+  const cancelUrl = buildManageUrl(managePayload, "cancel");
+
+  const calendarPayload: BookingEmailPayload = {
+    toEmail: params.toEmail,
+    clientFirstName: first,
+    clientFullName: params.clientName || first,
+    businessName: params.businessName,
+    businessAddress: params.businessAddress,
+    customLink,
+    dateTime: params.dateTime,
+    serviceNames: serviceLabel.split(", ").filter(Boolean),
+    addOnNames: [],
+    stylistName: params.providerName || null,
+    totalPrice: 0,
+    depositPaid: 0,
+    amountDue: 0,
+    source: params.source,
+    appointmentId: params.appointmentId,
+  };
+  const calendarUrl = buildGoogleCalendarUrl(calendarPayload);
+
+  const subject = `Reminder: appointment with ${params.businessName} in ${label}`;
+  const text = [
+    params.businessName,
+    headline,
+    subtext,
+    "",
+    `Add to Calendar: ${calendarUrl}`,
+    "",
+    whenLine,
+    address || null,
+    "",
+    `Service: ${serviceLabel}`,
+    `Provider: ${providerLabel}`,
+    "",
+    `Reschedule: ${rescheduleUrl}`,
+    `Cancel: ${cancelUrl}`,
+    "",
+    "Powered by Booqly",
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Appointment reminder</title>
+</head>
+<body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1A1C21;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#F3F4F6;padding:28px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td align="center" style="padding:32px 28px 8px 28px;text-align:center;">
+              <div style="font-family:Georgia,'Times New Roman',serif;font-size:18px;font-weight:700;color:#1A1C21;margin:0 0 10px 0;text-align:center;">${escapeHtml(params.businessName)}</div>
+              <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.25;font-weight:700;color:#1A1C21;margin:0 0 10px 0;text-align:center;">${escapeHtml(headline)}</div>
+              <div style="font-size:15px;line-height:1.5;color:#4B5563;margin:0 0 18px 0;text-align:center;">${escapeHtml(subtext)}</div>
+              <a href="${escapeHtml(calendarUrl)}" style="display:inline-block;padding:10px 16px;border:1.5px solid #759CC9;border-radius:10px;color:#3B629B;text-decoration:none;font-size:14px;font-weight:600;text-align:center;">
+                📅 Add to Calendar
+              </a>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:18px 28px 8px 28px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#E8F1F9;border-radius:12px;">
+                <tr>
+                  <td align="center" style="padding:16px 16px;text-align:center;">
+                    <div style="font-size:15px;font-weight:700;color:#3B629B;text-align:center;">${escapeHtml(whenLine)}</div>
+                    ${
+                      address
+                        ? `<div style="font-size:13px;color:#5B82C2;margin-top:6px;text-align:center;">${escapeHtml(address)}</div>`
+                        : ""
+                    }
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:10px 28px 8px 28px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:14px;border-collapse:collapse;">
+                ${detailRow("Service", escapeHtml(serviceLabel), true)}
+                ${detailRow("Provider", escapeHtml(providerLabel), true)}
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:18px 28px 8px 28px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td width="48%" style="padding-right:6px;">
+                    <a href="${escapeHtml(rescheduleUrl)}" style="display:block;text-align:center;background:#759CC9;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 10px;border-radius:10px;">Reschedule</a>
+                  </td>
+                  <td width="48%" style="padding-left:6px;">
+                    <a href="${escapeHtml(cancelUrl)}" style="display:block;text-align:center;background:#ffffff;color:#8B3D5B;text-decoration:none;font-weight:700;font-size:14px;padding:11px 10px;border-radius:10px;border:1.5px solid #D4A0B3;">Cancel</a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:22px 28px 28px 28px;text-align:center;">
+              <div style="border-top:1px solid #E5E7EB;padding-top:18px;font-size:12px;color:#9CA3AF;">
+                Powered by <strong style="color:#1A1C21;">Booqly</strong>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  return { subject, text, html };
 }
 
 function detailRow(label: string, value: string, withBorder: boolean): string {
@@ -620,17 +781,7 @@ export class BookingConfirmationEmailService {
   }
 
   /** Client-only 24h / 1h appointment reminder (app + web). */
-  static queueClientReminderEmail(params: {
-    toEmail: string;
-    clientName: string;
-    businessName: string;
-    businessAddress: string | null;
-    dateTime: Date;
-    serviceNames: string;
-    reminderKind: "24h" | "1h";
-    appointmentId: string;
-    source: BookingEmailSource;
-  }): void {
+  static queueClientReminderEmail(params: ClientReminderEmailParams): void {
     void this.sendClientReminderEmail(params).catch((err) => {
       console.error(
         `[BookingEmail] Reminder ${params.reminderKind} ${params.appointmentId} failed:`,
@@ -639,46 +790,19 @@ export class BookingConfirmationEmailService {
     });
   }
 
-  private static async sendClientReminderEmail(params: {
-    toEmail: string;
-    clientName: string;
-    businessName: string;
-    businessAddress: string | null;
-    dateTime: Date;
-    serviceNames: string;
-    reminderKind: "24h" | "1h";
-    appointmentId: string;
-    source: BookingEmailSource;
-  }): Promise<void> {
+  /** Exposed for preview / verification scripts. */
+  static buildClientReminderEmailContent(
+    params: ClientReminderEmailParams
+  ): { subject: string; text: string; html: string } {
+    return buildClientReminderContent(params);
+  }
+
+  private static async sendClientReminderEmail(
+    params: ClientReminderEmailParams
+  ): Promise<void> {
     if (!params.toEmail?.trim()) return;
 
-    const first =
-      (params.clientName || "").trim().split(/\s+/)[0] || "there";
-    const label = params.reminderKind === "24h" ? "24 hours" : "1 hour";
-    const { dateLong, time } = formatDateTimeParts(params.dateTime);
-    const subject = `Reminder: appointment with ${params.businessName} in ${label}`;
-    const text = [
-      `Hi ${first},`,
-      "",
-      `This is a reminder that your appointment with ${params.businessName} is in ${label}.`,
-      "",
-      `${dateLong} • ${time}`,
-      params.businessAddress || "",
-      `Services: ${params.serviceNames}`,
-      "",
-      "Powered by Booqly",
-    ]
-      .filter((line, idx, arr) => !(line === "" && arr[idx - 1] === ""))
-      .join("\n");
-
-    const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;background:#F3F4F6;padding:24px;">
-      <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;">
-        <h1 style="font-size:20px;margin:0 0 12px;">Appointment reminder</h1>
-        <p style="margin:0 0 12px;color:#374151;">Hi ${escapeHtml(first)}, your appointment with <strong>${escapeHtml(params.businessName)}</strong> is in <strong>${label}</strong>.</p>
-        <p style="margin:0 0 8px;"><strong>${escapeHtml(dateLong)} • ${escapeHtml(time)}</strong></p>
-        ${params.businessAddress ? `<p style="margin:0 0 8px;color:#6B7280;">${escapeHtml(params.businessAddress)}</p>` : ""}
-        <p style="margin:0 0 8px;">Services: ${escapeHtml(params.serviceNames)}</p>
-      </div></body></html>`;
+    const { subject, text, html } = buildClientReminderContent(params);
 
     await this.sendRaw({
       toEmail: params.toEmail,
@@ -771,33 +895,131 @@ export class BookingConfirmationEmailService {
         {
           model: Marketplace,
           as: "marketplace",
-          attributes: ["id", "businessName"],
+          attributes: ["id", "businessName", "customLink", "userId"],
+          include: [
+            {
+              model: User,
+              as: "provider",
+              attributes: ["id", "name"],
+              required: false,
+            },
+          ],
+        },
+        {
+          model: Service,
+          as: "services",
+          through: { attributes: [] },
+          attributes: ["id", "name"],
+        },
+        {
+          model: User,
+          as: "assignedTeamMember",
+          attributes: ["id", "name"],
+          required: false,
         },
       ],
     });
     if (!appointment) return;
     const user = (appointment as any).user as User | undefined;
     const marketplace = (appointment as any).marketplace as
-      | Marketplace
+      | (Marketplace & { provider?: User })
       | undefined;
     if (!user?.email) return;
 
     const first =
       (user.name || "").trim().split(/\s+/)[0] || "there";
     const business = marketplace?.businessName || "your provider";
+    const services = ((appointment as any).services || []) as Service[];
+    const serviceNames = services
+      .map((s) => s.name)
+      .filter(Boolean)
+      .join(", ");
+    const assignee = (appointment as any).assignedTeamMember as
+      | User
+      | undefined;
+    const stylistFull =
+      appointment.clientNoPreference
+        ? null
+        : assignee?.name?.trim() ||
+          marketplace?.provider?.name?.trim() ||
+          null;
+    const stylistFirst = stylistFull
+      ? stylistFull.split(/\s+/)[0]
+      : null;
+    const serviceLine = stylistFirst
+      ? `${serviceNames || "Service"} with ${stylistFirst}`
+      : serviceNames || "Service";
+
+    const { dateLong, time } = formatDateTimeParts(
+      new Date(appointment.dateTime)
+    );
+    const whenLine = `${dateLong} · ${time}`;
+    const bookAgainUrl = bookingHomeUrl(marketplace?.customLink || null);
+
     const subject = `Booking reservation expired with ${business}`;
     const text = [
-      `Hi ${first},`,
+      business,
+      "Reservation expired",
       "",
-      "Your booking reservation has expired because the deposit wasn't received. Please rebook if you still want this slot!",
+      `Hi ${first}, we didn't receive your deposit, so this slot has been released.`,
+      "",
+      whenLine,
+      serviceLine,
+      "",
+      `Book again: ${bookAgainUrl}`,
       "",
       "Powered by Booqly",
     ].join("\n");
-    const html = `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;padding:24px;">
-      <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;">
-        <h1 style="font-size:20px;margin:0 0 12px;">Reservation expired</h1>
-        <p>Hi ${escapeHtml(first)}, your booking reservation has expired because the deposit wasn't received. Please rebook if you still want this slot!</p>
-      </div></body></html>`;
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reservation expired</title>
+</head>
+<body style="margin:0;padding:0;background:#F8F9FB;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1A1C21;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#F8F9FB;padding:28px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;background:#ffffff;border:1px solid #E5E7EB;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td align="center" style="padding:36px 32px 8px 32px;text-align:center;">
+              <div style="font-family:Georgia,'Times New Roman',serif;font-size:18px;font-weight:700;color:#1A1C21;margin:0 0 10px 0;text-align:center;">${escapeHtml(business)}</div>
+              <div style="font-family:Georgia,'Times New Roman',serif;font-size:28px;line-height:1.25;font-weight:700;color:#1A1C21;margin:0 0 14px 0;text-align:center;">Reservation expired</div>
+              <div style="font-size:15px;line-height:1.55;color:#6B7280;margin:0 auto 22px auto;max-width:380px;text-align:center;">Hi ${escapeHtml(first)}, we didn't receive your deposit, so this slot has been released.</div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:0 32px 8px 32px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#F2F4F8;border:1px dashed #C5CDD8;border-radius:12px;">
+                <tr>
+                  <td align="center" style="padding:18px 16px;text-align:center;">
+                    <div style="font-size:15px;font-weight:700;color:#3B629B;text-decoration:line-through;text-align:center;">${escapeHtml(whenLine)}</div>
+                    <div style="font-size:14px;color:#6B7280;margin-top:8px;text-align:center;">${escapeHtml(serviceLine)}</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:18px 32px 8px 32px;">
+              <a href="${escapeHtml(bookAgainUrl)}" style="display:block;text-align:center;background:#759CC9;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 16px;border-radius:10px;">Book again</a>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:22px 32px 28px 32px;text-align:center;">
+              <div style="border-top:1px solid #E5E7EB;padding-top:18px;font-size:12px;color:#9CA3AF;">
+                Powered by <strong style="color:#1A1C21;">Booqly</strong>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
 
     await this.sendRaw({
       toEmail: user.email,
