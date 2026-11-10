@@ -1647,12 +1647,15 @@ export const updateProviderAppointment = async (
       price,
       services,
       assignedTeamMemberId,
+      depositMode,
     } = req.body as {
       appointmentId?: string;
       dateTime?: string;
       price?: number;
       services?: Array<{ serviceId: string; price: number; quantity?: number }>;
       assignedTeamMemberId?: string | null;
+      /** Reschedule edit: send_payment_link | waive_deposit (same as create). */
+      depositMode?: "send_payment_link" | "waive_deposit";
     };
 
     if (
@@ -1699,16 +1702,30 @@ export const updateProviderAppointment = async (
       });
     }
 
-    // Editable once confirmed (manual waive → confirmed, or Confirm → availed).
+    // Editable after confirm, complete, or reschedule.
     if (
       appointment.status !== "availed" &&
-      appointment.status !== "confirmed"
+      appointment.status !== "confirmed" &&
+      appointment.status !== "postponed"
     ) {
       await transaction?.rollback();
       return res.status(400).json({
         status: false,
         message:
           "Only confirmed appointments can be edited. Confirm the booking first.",
+      });
+    }
+
+    const mode =
+      depositMode === "send_payment_link" || depositMode === "waive_deposit"
+        ? depositMode
+        : null;
+    if (mode && appointment.status !== "postponed") {
+      await transaction?.rollback();
+      return res.status(400).json({
+        status: false,
+        message:
+          "Payment link / waive deposit is only available when editing a rescheduled booking.",
       });
     }
 
@@ -1846,20 +1863,68 @@ export const updateProviderAppointment = async (
 
     const oldDateTime = new Date(appointment.dateTime);
     const newPrice = Number(price);
-    // Keep deposit already paid; roll any price increase into remaining balance
-    // (do not collect a second deposit).
-    const { remainingBalance } = remainingBalanceAfterPriceEdit({
-      oldPrice: Number(appointment.price || 0),
-      oldRemainingBalance: appointment.remainingBalance,
-      oldDepositAmount: appointment.depositAmount,
-      newPrice,
-    });
-    let nextPaymentStatus = appointment.paymentStatus;
-    if (remainingBalance > 0 && nextPaymentStatus === "paid") {
-      nextPaymentStatus = "partially_paid";
-    } else if (remainingBalance <= 0 && nextPaymentStatus === "partially_paid") {
-      // Price reduced to (or below) amount already paid — nothing left due.
-      nextPaymentStatus = "paid";
+
+    let remainingBalance: number;
+    let nextPaymentStatus: Appointment["paymentStatus"] =
+      appointment.paymentStatus;
+    let nextStatus: Appointment["status"] = appointment.status;
+    let nextDepositAmount = appointment.depositAmount;
+    let nextDepositExpiresAt = appointment.depositExpiresAt;
+    let nextDepositWaived = appointment.depositWaived;
+    let responseMessage = "Appointment updated successfully.";
+
+    if (mode === "send_payment_link" || mode === "waive_deposit") {
+      // Same deposit handling as provider create (reschedule → re-save).
+      let resolvedDeposit = computeServiceDepositAmount(
+        primaryService,
+        newPrice
+      );
+      resolvedDeposit = Math.max(0, Number(resolvedDeposit) || 0);
+
+      if (mode === "send_payment_link") {
+        if (resolvedDeposit <= 0) {
+          await transaction?.rollback();
+          return res.status(400).json({
+            status: false,
+            message:
+              "This service has no deposit configured. Choose Waive Deposit, or set a deposit on the service.",
+          });
+        }
+        remainingBalance = Math.max(0, newPrice - resolvedDeposit);
+        nextDepositAmount = resolvedDeposit;
+        nextStatus = "pending_deposit";
+        nextPaymentStatus = "pending";
+        nextDepositExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+        nextDepositWaived = false;
+        responseMessage =
+          "Appointment reserved. Payment link sent to the client.";
+      } else {
+        remainingBalance = newPrice;
+        nextDepositAmount = 0;
+        nextStatus = "confirmed";
+        nextPaymentStatus = "pending";
+        nextDepositExpiresAt = null;
+        nextDepositWaived = true;
+        responseMessage = "Appointment confirmed (deposit waived).";
+      }
+    } else {
+      // Keep deposit already paid; roll any price increase into remaining balance
+      // (do not collect a second deposit).
+      const rolled = remainingBalanceAfterPriceEdit({
+        oldPrice: Number(appointment.price || 0),
+        oldRemainingBalance: appointment.remainingBalance,
+        oldDepositAmount: appointment.depositAmount,
+        newPrice,
+      });
+      remainingBalance = rolled.remainingBalance;
+      if (remainingBalance > 0 && nextPaymentStatus === "paid") {
+        nextPaymentStatus = "partially_paid";
+      } else if (
+        remainingBalance <= 0 &&
+        nextPaymentStatus === "partially_paid"
+      ) {
+        nextPaymentStatus = "paid";
+      }
     }
 
     await AppointmentServiceStatus.destroy({
@@ -1880,12 +1945,14 @@ export const updateProviderAppointment = async (
         price: newPrice,
         remainingBalance,
         paymentStatus: nextPaymentStatus,
+        status: nextStatus,
+        depositAmount: nextDepositAmount,
+        depositExpiresAt: nextDepositExpiresAt,
+        depositWaived: nextDepositWaived,
         serviceId: services[0].serviceId,
         assignedTeamMemberId: resolvedAssignedTeamMemberId,
         clientNoPreference,
-        // Keep status as availed — no re-confirm required.
-        // depositAmount is intentionally unchanged (already collected).
-        // Reschedule → allow 24h / 1h client reminders for the new time.
+        // Reschedule / edit → allow 24h / 1h client reminders for the new time.
         reminder24hSentAt: null,
         reminder1hSentAt: null,
       },
@@ -1904,13 +1971,43 @@ export const updateProviderAppointment = async (
       appointment.id
     );
 
-    // Email includes updated total / deposit paid / amount due.
-    BookingConfirmationEmailService.queueSendForAppAppointment(appointment.id, {
-      isUpdate: true,
-    });
+    if (mode === "send_payment_link") {
+      BookingConfirmationEmailService.queueDepositReservationEmail(
+        appointment.id
+      );
+      if (appointment.userId) {
+        const payLink =
+          BookingConfirmationEmailService.buildDepositPayLink(appointment.id);
+        const depositLabel = Number(nextDepositAmount || 0).toFixed(2);
+        void NotificationService.createNotification({
+          userId: appointment.userId,
+          type: "booking_confirmation",
+          title: "Appointment reserved — pay deposit",
+          content: `Your appointment is reserved! Pay your $${depositLabel} deposit within 2 hours to lock it in: ${payLink}`,
+          data: {
+            appointmentId: appointment.id,
+            type: "pending_deposit",
+            action: "pay_deposit",
+          },
+          channels: {
+            push: true,
+            sms: true,
+            email: false,
+            in_app: true,
+          },
+        }).catch((err) =>
+          console.error("[BookingNotify] reschedule deposit notify failed:", err)
+        );
+      }
+    } else {
+      // Email includes updated total / deposit paid / amount due.
+      BookingConfirmationEmailService.queueSendForAppAppointment(appointment.id, {
+        isUpdate: true,
+      });
+    }
 
     // In-app + push + SMS for Booqly clients (email already sent above).
-    if (appointment.userId) {
+    if (appointment.userId && mode !== "send_payment_link") {
       void NotificationService.createNotification({
         userId: appointment.userId,
         type: "booking_confirmation",
@@ -1966,7 +2063,7 @@ export const updateProviderAppointment = async (
 
     return res.status(200).json({
       status: true,
-      message: "Appointment updated successfully.",
+      message: responseMessage,
       data: updated?.toJSON() ?? appointment.toJSON(),
     });
   } catch (err: any) {
