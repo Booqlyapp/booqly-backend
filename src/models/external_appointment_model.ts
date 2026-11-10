@@ -30,7 +30,13 @@ interface ExternalAppointmentAttributes {
   email: string;
   phone: string;
   dateTime: Date;
-  status: "pending" | "confirmed" | "canceled" | "completed";
+  status:
+    | "pending"
+    | "confirmed"
+    | "canceled"
+    | "completed"
+    | "postponed"
+    | "availed";
   price: number;
   depositAmount?: number;
   remainingBalance?: number;
@@ -146,7 +152,14 @@ export default function initExternalAppointment(sequelize: Sequelize) {
         allowNull: false,
       },
       status: {
-        type: DataTypes.ENUM("pending", "confirmed", "canceled", "completed"),
+        type: DataTypes.ENUM(
+          "pending",
+          "confirmed",
+          "canceled",
+          "completed",
+          "postponed",
+          "availed"
+        ),
         allowNull: false,
         defaultValue: "pending",
       },

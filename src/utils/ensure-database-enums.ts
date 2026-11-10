@@ -12,6 +12,9 @@ const ENUM_UPDATES = [
   `ALTER TYPE "enum_Appointments_status" ADD VALUE IF NOT EXISTS 'pending_deposit';`,
   `ALTER TYPE "enum_Appointments_status" ADD VALUE IF NOT EXISTS 'confirmed';`,
   `ALTER TYPE "enum_Appointments_status" ADD VALUE IF NOT EXISTS 'deposit_expired';`,
+  // Web (ExternalAppointments) — match app booking statuses for provider/owner UI.
+  `ALTER TYPE "enum_ExternalAppointments_status" ADD VALUE IF NOT EXISTS 'postponed';`,
+  `ALTER TYPE "enum_ExternalAppointments_status" ADD VALUE IF NOT EXISTS 'availed';`,
 ];
 
 export async function ensureDatabaseEnums(sequelize: Sequelize): Promise<void> {

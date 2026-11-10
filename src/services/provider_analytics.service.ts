@@ -1094,15 +1094,16 @@ export class ProviderAnalyticsService {
       },
     };
     if (filters.bookingStatus === "completed") {
-      externalWhere.status = "completed";
+      // Web historically used `completed`; provider UI now also writes `availed`.
+      externalWhere.status = { [Op.in]: ["completed", "availed"] };
     } else if (filters.bookingStatus === "cancelled") {
       externalWhere.status = "canceled";
     } else if (filters.bookingStatuses && filters.bookingStatuses.length > 0) {
       const mapped = filters.bookingStatuses
-        .map((s) => {
-          if (s === "completed") return "completed";
-          if (s === "cancelled") return "canceled";
-          return null;
+        .flatMap((s) => {
+          if (s === "completed") return ["completed", "availed"];
+          if (s === "cancelled") return ["canceled"];
+          return [];
         })
         .filter(Boolean);
       if (mapped.length > 0) {
@@ -1140,7 +1141,8 @@ export class ProviderAnalyticsService {
           ? `e:${String(row.email).toLowerCase()}`
           : `x:${row.id}`,
         price: Number(row.price || 0),
-        completed: row.status === "completed",
+        completed:
+          row.status === "completed" || row.status === "availed",
       });
     }
 

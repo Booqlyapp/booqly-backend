@@ -1745,7 +1745,11 @@ export const reschedulePublicExternalAppointment = async (
       });
     }
 
-    if (appointment.status === "canceled" || appointment.status === "completed") {
+    if (
+      appointment.status === "canceled" ||
+      appointment.status === "completed" ||
+      appointment.status === "availed"
+    ) {
       return res.status(400).json({
         status: false,
         message: `Cannot reschedule a ${appointment.status} appointment.`,
@@ -1859,7 +1863,12 @@ export const updateProviderExternalAppointment = async (
       });
     }
 
-    if (appointment.status !== "confirmed") {
+    // Match app: editable after confirm / complete (availed), plus legacy web `completed`.
+    if (
+      appointment.status !== "confirmed" &&
+      appointment.status !== "availed" &&
+      appointment.status !== "completed"
+    ) {
       await transaction.rollback();
       return res.status(400).json({
         status: false,
@@ -2122,8 +2131,15 @@ export const updateExternalAppointmentStatus = async (
       });
     }
 
-    // Validate status value
-    const validStatuses = ["pending", "confirmed", "canceled", "completed"];
+    // Match app appointment statuses (+ legacy web `completed` / `confirmed`).
+    const validStatuses = [
+      "pending",
+      "confirmed",
+      "canceled",
+      "completed",
+      "postponed",
+      "availed",
+    ];
     if (!validStatuses.includes(status.toLowerCase())) {
       return res.status(200).json({
         status: false,
@@ -2142,12 +2158,14 @@ export const updateExternalAppointmentStatus = async (
     }
 
     const previousStatus = externalAppointment.status;
+    const nextStatus = status.toLowerCase();
 
     // Update the status
-    await externalAppointment.update({ status: status.toLowerCase() });
+    await externalAppointment.update({ status: nextStatus as any });
 
-    const activeStatuses = ["pending", "confirmed"];
-    const isNowActive = activeStatuses.includes(status.toLowerCase());
+    // Active = still holding the slot (same idea as app pending/confirmed/postponed).
+    const activeStatuses = ["pending", "confirmed", "postponed"];
+    const isNowActive = activeStatuses.includes(nextStatus);
     const wasActive = activeStatuses.includes(previousStatus);
 
     if (!isNowActive && wasActive) {
