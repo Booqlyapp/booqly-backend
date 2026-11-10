@@ -32,6 +32,7 @@ import {
 } from "./middlewares/security.middleware";
 import { httpLoggingMiddleware, errorLoggingMiddleware } from "./middlewares/logging.middleware";
 import path from "path";
+import fs from "fs";
 
 const app = express();
 const server = createServer(app);
@@ -95,8 +96,33 @@ app.use('/uploads', (req, res, next) => {
   },
 }));
 
-// Android App Links verification 
-app.use('/.well-known', express.static(path.join(process.cwd(), '.well-known')));
+// App Links / Universal Links verification (explicit Content-Type for AASA).
+// Use readFile + send (not sendFile) so Windows paths with spaces work.
+app.get('/.well-known/apple-app-site-association', (_req, res) => {
+  try {
+    const aasaPath = path.join(
+      process.cwd(),
+      '.well-known',
+      'apple-app-site-association'
+    );
+    res.type('application/json');
+    res.send(fs.readFileSync(aasaPath, 'utf8'));
+  } catch (err) {
+    res.status(404).json({ status: false, message: 'AASA not found' });
+  }
+});
+app.use(
+  '/.well-known',
+  express.static(path.join(process.cwd(), '.well-known'), {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('apple-app-site-association')) {
+        res.setHeader('Content-Type', 'application/json');
+      } else if (filePath.endsWith('assetlinks.json')) {
+        res.setHeader('Content-Type', 'application/json');
+      }
+    },
+  })
+);
 
 // API routes (no /api prefix since we're using api subdomain)
 app.use("/", routes);

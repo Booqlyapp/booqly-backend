@@ -1,0 +1,17 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "544JD2S36A.com.booqlyapp.ios",
+        "paths": [
+          "/appointments/*",
+          "/promo",
+          "/promo/*",
+          "/reel/*",
+          "/r/*"
+        ]
+      }
+    ]
+  }
+}
