@@ -1119,14 +1119,14 @@ function generateTimeSlots(
   // Get current time to prevent booking in the past
   const now = new Date();
 
-  // Generate slots every 15 minutes
+  // Generate slots every 1 hour (same as app Select Time)
   while (currentTime < endTime) {
     const slotEnd = new Date(currentTime.getTime() + serviceDuration * 60000);
     
     if (slotEnd <= endTime) {
       // Skip past time slots
       if (currentTime <= now) {
-        currentTime = new Date(currentTime.getTime() + 15 * 60000);
+        currentTime = new Date(currentTime.getTime() + 60 * 60000);
         continue;
       }
 
@@ -1149,7 +1149,7 @@ function generateTimeSlots(
       }
     }
 
-    currentTime = new Date(currentTime.getTime() + 15 * 60000); // Add 15 minutes
+    currentTime = new Date(currentTime.getTime() + 60 * 60000); // Add 1 hour
   }
 
   return slots;
