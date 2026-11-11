@@ -601,6 +601,158 @@ export const getBookableDates = async (
   }
 };
 
+/**
+ * Public: hours on a calendar day that already have an active booking.
+ * Used by Select Time UI to lightly gray booked slots (still tappable).
+ */
+export const getOccupiedSlots = async (
+  req: Request,
+  res: Response
+): Promise<Response> => {
+  try {
+    const {
+      marketplaceId,
+      date,
+      excludeAppointmentId,
+      excludeExternalAppointmentId,
+    } = req.query;
+
+    if (!marketplaceId || !date) {
+      return res.status(400).json({
+        status: false,
+        message: "marketplaceId and date are required",
+      });
+    }
+
+    const dateStr = String(date);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      return res.status(400).json({
+        status: false,
+        message: "date must be YYYY-MM-DD",
+      });
+    }
+
+    const [y, m, d] = dateStr.split("-").map((n) => parseInt(n, 10));
+    const startOfDay = new Date(y, m - 1, d, 0, 0, 0, 0);
+    const endOfDay = new Date(y, m - 1, d, 23, 59, 59, 999);
+
+    const marketplace = await Marketplace.findOne({
+      where: { id: String(marketplaceId), deletedAt: null },
+      attributes: ["id"],
+    });
+    if (!marketplace) {
+      return res.status(404).json({
+        status: false,
+        message: "Marketplace not found",
+      });
+    }
+
+    const appWhere: Record<string, unknown> = {
+      marketplaceId: String(marketplaceId),
+      dateTime: { [Op.between]: [startOfDay, endOfDay] },
+      status: {
+        [Op.in]: [
+          "pending",
+          "pending_deposit",
+          "confirmed",
+          "postponed",
+          "availed",
+        ],
+      },
+      deletedAt: null,
+    };
+    if (excludeAppointmentId) {
+      appWhere.id = { [Op.ne]: String(excludeAppointmentId) };
+    }
+
+    const extWhere: Record<string, unknown> = {
+      marketplaceId: String(marketplaceId),
+      dateTime: { [Op.between]: [startOfDay, endOfDay] },
+      status: { [Op.in]: ["pending", "confirmed", "postponed"] },
+      deletedAt: null,
+    };
+    if (excludeExternalAppointmentId) {
+      extWhere.id = { [Op.ne]: String(excludeExternalAppointmentId) };
+    }
+
+    const [regularAppointments, externalAppointments] = await Promise.all([
+      Appointment.findAll({
+        where: appWhere,
+        attributes: ["id", "dateTime"],
+        include: [
+          {
+            model: Service,
+            as: "services",
+            through: { attributes: [] },
+            attributes: ["duration"],
+            required: false,
+          },
+        ],
+      }),
+      ExternalAppointment.findAll({
+        where: extWhere,
+        attributes: ["id", "dateTime", "servicesData"],
+      }),
+    ]);
+
+    const occupiedHours = new Set<number>();
+
+    const markRange = (start: Date, durationMinutes: number) => {
+      const endMs = start.getTime() + Math.max(durationMinutes, 1) * 60000;
+      // Gray every hour slot that overlaps [start, end).
+      let cursor = new Date(start);
+      cursor.setMinutes(0, 0, 0);
+      if (cursor.getTime() > start.getTime()) {
+        cursor = new Date(cursor.getTime() - 60 * 60000);
+      }
+      while (cursor.getTime() < endMs) {
+        if (
+          cursor.getFullYear() === y &&
+          cursor.getMonth() === m - 1 &&
+          cursor.getDate() === d
+        ) {
+          occupiedHours.add(cursor.getHours());
+        }
+        cursor = new Date(cursor.getTime() + 60 * 60000);
+      }
+    };
+
+    for (const apt of regularAppointments) {
+      const services = ((apt as any).services || []) as Array<{
+        duration?: string | number;
+      }>;
+      let minutes = 60;
+      if (services.length > 0) {
+        minutes = services.reduce(
+          (sum, s) => sum + parseDurationMinutes(s.duration),
+          0
+        );
+      }
+      markRange(new Date(apt.dateTime), minutes);
+    }
+
+    for (const apt of externalAppointments) {
+      const data = ((apt as any).servicesData || []) as unknown[];
+      const minutes = Math.max(60, (Array.isArray(data) ? data.length : 1) * 60);
+      markRange(new Date(apt.dateTime), minutes);
+    }
+
+    return res.status(200).json({
+      status: true,
+      data: {
+        occupiedHours: Array.from(occupiedHours).sort((a, b) => a - b),
+      },
+    });
+  } catch (error: any) {
+    console.error("Error fetching occupied slots:", error);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to fetch occupied slots",
+      error: error.message,
+    });
+  }
+};
+
 export const checkSlotAvailability = async (
   req: Request,
   res: Response

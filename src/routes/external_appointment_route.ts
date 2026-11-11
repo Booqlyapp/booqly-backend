@@ -4,6 +4,7 @@ import {
   getMarketplaceByCustomLink,
   getAvailableTimeSlots,
   getBookableDates,
+  getOccupiedSlots,
   checkSlotAvailability,
   createExternalAppointmentWithDeposit,
   createDepositPaymentIntent,
@@ -25,6 +26,7 @@ router.post("/create-payment-intent", createDepositPaymentIntent);
 router.get("/marketplace/:customLink", getMarketplaceByCustomLink);
 router.get("/available-slots", getAvailableTimeSlots);
 router.get("/bookable-dates", getBookableDates);
+router.get("/occupied-slots", getOccupiedSlots);
 router.get("/check-slot-availability", checkSlotAvailability);
 router.get("/external-appointments/:appointmentId", getPublicExternalAppointmentById);
 router.post(
