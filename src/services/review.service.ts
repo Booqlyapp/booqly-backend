@@ -21,7 +21,11 @@ export class ReviewService {
   /**
    * Get pending review opportunities for a user (completed appointments without reviews)
    */
-  static async getPendingReviewOpportunities(userId: string, userRole: 'client' | 'solo' | 'suite'): Promise<any[]> {
+  static async getPendingReviewOpportunities(
+    userId: string,
+    userRole: 'client' | 'solo' | 'suite',
+    prioritizeAppointmentId?: string
+  ): Promise<any[]> {
     try {
       let whereClause: any;
       let includeClause: any[];
@@ -74,6 +78,26 @@ export class ReviewService {
         order: [['dateTime', 'DESC']],
         limit: 10, // Limit to recent appointments
       });
+
+      // Completing an older booking can fall outside the recent-10 window —
+      // always pull that appointment in so the review popup can target it.
+      if (prioritizeAppointmentId) {
+        const already = appointments.some(
+          (a) => a.id === prioritizeAppointmentId
+        );
+        if (!already) {
+          const prioritized = await Appointment.findOne({
+            where: {
+              ...whereClause,
+              id: prioritizeAppointmentId,
+            },
+            include: includeClause,
+          });
+          if (prioritized) {
+            appointments.unshift(prioritized);
+          }
+        }
+      }
 
       // Filter out appointments that already have reviews
       const pendingReviews = [];

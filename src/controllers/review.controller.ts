@@ -21,8 +21,16 @@ export const getPendingReviewOpportunities = async (req: AuthRequest, res: Respo
 
     const userId = req.user.id;
     const userRole = req.user.role;
+    const prioritizeAppointmentId =
+      typeof req.query.appointmentId === 'string' && req.query.appointmentId.trim()
+        ? req.query.appointmentId.trim()
+        : undefined;
 
-    const pendingReviews = await ReviewService.getPendingReviewOpportunities(userId, userRole);
+    const pendingReviews = await ReviewService.getPendingReviewOpportunities(
+      userId,
+      userRole,
+      prioritizeAppointmentId
+    );
 
     res.status(200).json({
       status: true,
