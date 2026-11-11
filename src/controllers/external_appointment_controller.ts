@@ -2259,8 +2259,8 @@ export const updateProviderExternalAppointment = async (
         remainingBalance = finalPrice;
         nextDepositAmount = 0;
         nextDepositPaid = false;
-        nextStatus = "confirmed";
-        responseMessage = "Appointment confirmed (deposit waived).";
+        nextStatus = "pending";
+        responseMessage = "Appointment booked (deposit waived).";
       }
     } else {
       // Keep deposit already paid; roll any price increase into remaining balance.

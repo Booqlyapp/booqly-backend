@@ -778,10 +778,10 @@ export const createProviderAppointment = async (
         depositExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
         depositWaived = false;
       } else {
-        // Option B: waive deposit — confirmed immediately, full balance at visit.
+        // Option B: waive deposit — still pending (not auto-confirmed); full balance at visit.
         resolvedDeposit = 0;
         resolvedRemaining = Number(price);
-        resolvedStatus = "confirmed";
+        resolvedStatus = "pending";
         resolvedPaymentStatus = "pending";
         depositExpiresAt = null;
         depositWaived = true;
@@ -930,7 +930,7 @@ export const createProviderAppointment = async (
         mode === "send_payment_link"
           ? "Appointment reserved. Payment link sent to the client."
           : mode === "waive_deposit"
-            ? "Appointment confirmed (deposit waived)."
+            ? "Appointment booked (deposit waived)."
             : "Appointment created successfully.",
       data: createdAppointment?.toJSON() ?? newAppointment.toJSON(),
     });
@@ -1911,11 +1911,11 @@ export const updateProviderAppointment = async (
       } else {
         remainingBalance = newPrice;
         nextDepositAmount = 0;
-        nextStatus = "confirmed";
+        nextStatus = "pending";
         nextPaymentStatus = "pending";
         nextDepositExpiresAt = null;
         nextDepositWaived = true;
-        responseMessage = "Appointment confirmed (deposit waived).";
+        responseMessage = "Appointment booked (deposit waived).";
       }
     } else {
       // Keep deposit already paid; roll any price increase into remaining balance
