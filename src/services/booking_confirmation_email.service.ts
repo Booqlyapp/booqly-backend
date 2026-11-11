@@ -4,6 +4,7 @@ import { ExternalAppointment } from "../models/external_appointment_model";
 import { Marketplace } from "../models/marketplace_model";
 import { User } from "../models/user_model";
 import { Service } from "../models/service_model";
+import { NotificationService } from "./notification.service";
 
 export type BookingEmailSource = "app" | "web";
 
@@ -754,6 +755,334 @@ export class BookingConfirmationEmailService {
         );
       }
     );
+  }
+
+  /**
+   * Notify marketplace owner + assigned team member of a new app booking
+   * (email via Brevo + push / in-app). Skips `excludeUserId` (e.g. provider who
+   * manually created the booking).
+   */
+  static queueNotifyStaffOfNewAppAppointment(
+    appointmentId: string,
+    options?: { excludeUserId?: string }
+  ): void {
+    void this.notifyStaffOfNewAppAppointment(appointmentId, options).catch(
+      (err) => {
+        console.error(
+          `[BookingEmail] Staff notify app ${appointmentId} failed:`,
+          err
+        );
+      }
+    );
+  }
+
+  /** Same as app staff notify, for custom-link / web bookings. */
+  static queueNotifyStaffOfNewExternalAppointment(
+    appointmentId: string,
+    options?: { excludeUserId?: string }
+  ): void {
+    void this.notifyStaffOfNewExternalAppointment(appointmentId, options).catch(
+      (err) => {
+        console.error(
+          `[BookingEmail] Staff notify web ${appointmentId} failed:`,
+          err
+        );
+      }
+    );
+  }
+
+  private static async notifyStaffOfNewAppAppointment(
+    appointmentId: string,
+    options?: { excludeUserId?: string }
+  ): Promise<void> {
+    const appointment = await Appointment.findByPk(appointmentId, {
+      include: [
+        { model: User, as: "user", attributes: ["id", "name", "email"] },
+        {
+          model: Marketplace,
+          as: "marketplace",
+          attributes: ["id", "businessName", "address", "userId"],
+        },
+        {
+          model: Service,
+          as: "services",
+          through: { attributes: [] },
+          attributes: ["id", "name"],
+        },
+        {
+          model: User,
+          as: "assignedTeamMember",
+          attributes: ["id", "name", "email"],
+          required: false,
+        },
+      ],
+    });
+    if (!appointment) return;
+
+    const client = (appointment as any).user as User | undefined;
+    const marketplace = (appointment as any).marketplace as
+      | Marketplace
+      | undefined;
+    const services = ((appointment as any).services || []) as Service[];
+    const assignee = (appointment as any).assignedTeamMember as
+      | User
+      | undefined;
+    const clientName = (client?.name || "").trim() || "A client";
+    const serviceNames = services.map((s) => s.name).filter(Boolean);
+
+    await this.deliverStaffNewBookingAlerts({
+      marketplaceOwnerId: marketplace?.userId || null,
+      assignee,
+      excludeUserId: options?.excludeUserId,
+      clientFullName: clientName,
+      businessName: marketplace?.businessName || "Booqly",
+      businessAddress: marketplace?.address || null,
+      dateTime: new Date(appointment.dateTime),
+      serviceNames,
+      source: "app",
+      appointmentId: appointment.id,
+    });
+  }
+
+  private static async notifyStaffOfNewExternalAppointment(
+    appointmentId: string,
+    options?: { excludeUserId?: string }
+  ): Promise<void> {
+    const appointment = await ExternalAppointment.findByPk(appointmentId, {
+      include: [
+        {
+          model: Marketplace,
+          as: "marketplace",
+          attributes: ["id", "businessName", "address", "userId"],
+        },
+        {
+          model: User,
+          as: "assignedTeamMember",
+          attributes: ["id", "name", "email"],
+          required: false,
+        },
+      ],
+    });
+    if (!appointment) return;
+
+    const marketplace = (appointment as any).marketplace as
+      | Marketplace
+      | undefined;
+    const assignee = (appointment as any).assignedTeamMember as
+      | User
+      | undefined;
+    const clientName =
+      `${appointment.firstName || ""} ${appointment.lastName || ""}`.trim() ||
+      "A client";
+    const servicesData = Array.isArray(appointment.servicesData)
+      ? appointment.servicesData
+      : [];
+    const serviceNames = servicesData
+      .map((s: any) => String(s?.serviceName || "").trim())
+      .filter(Boolean);
+
+    await this.deliverStaffNewBookingAlerts({
+      marketplaceOwnerId: marketplace?.userId || null,
+      assignee,
+      excludeUserId: options?.excludeUserId,
+      clientFullName: clientName,
+      businessName: marketplace?.businessName || "Booqly",
+      businessAddress: marketplace?.address || null,
+      dateTime: new Date(appointment.dateTime),
+      serviceNames,
+      source: "web",
+      appointmentId: appointment.id,
+    });
+  }
+
+  private static async deliverStaffNewBookingAlerts(params: {
+    marketplaceOwnerId: string | null;
+    assignee?: User | null;
+    excludeUserId?: string;
+    clientFullName: string;
+    businessName: string;
+    businessAddress: string | null;
+    dateTime: Date;
+    serviceNames: string[];
+    source: BookingEmailSource;
+    appointmentId: string;
+  }): Promise<void> {
+    const recipientIds = new Set<string>();
+    if (params.marketplaceOwnerId) {
+      recipientIds.add(String(params.marketplaceOwnerId));
+    }
+    if (params.assignee?.id) {
+      recipientIds.add(String(params.assignee.id));
+    }
+    if (params.excludeUserId) {
+      recipientIds.delete(String(params.excludeUserId));
+    }
+    if (recipientIds.size === 0) return;
+
+    const staffUsers = await User.findAll({
+      where: { id: Array.from(recipientIds) },
+      attributes: ["id", "name", "email", "fcmToken"],
+    });
+
+    const { subjectWhen, dateLong, time } = formatDateTimeParts(params.dateTime);
+    const servicesLabel = params.serviceNames.join(", ") || "Appointment";
+    const pushBody = `${params.clientFullName} booked ${servicesLabel} — ${dateLong} at ${time}`;
+
+    for (const staff of staffUsers) {
+      if (staff.email?.trim()) {
+        await this.sendStaffNewBookingEmail({
+          toEmail: staff.email.trim(),
+          staffName: (staff.name || "").trim() || "there",
+          clientFullName: params.clientFullName,
+          businessName: params.businessName,
+          businessAddress: params.businessAddress,
+          dateTime: params.dateTime,
+          serviceNames: params.serviceNames,
+          subjectWhen,
+          dateLong,
+          time,
+          source: params.source,
+          appointmentId: params.appointmentId,
+        });
+      }
+
+      void NotificationService.createNotification({
+        userId: staff.id,
+        type: "booking_confirmation",
+        title: "New appointment",
+        content: pushBody,
+        data: {
+          appointmentId: params.appointmentId,
+          type: "new_booking",
+          source: params.source,
+        },
+        channels: {
+          push: true,
+          sms: false,
+          email: false,
+          in_app: true,
+        },
+      }).catch((err) =>
+        console.error(
+          `[BookingNotify] Staff push ${staff.id} for ${params.appointmentId} failed:`,
+          err
+        )
+      );
+    }
+  }
+
+  private static async sendStaffNewBookingEmail(params: {
+    toEmail: string;
+    staffName: string;
+    clientFullName: string;
+    businessName: string;
+    businessAddress: string | null;
+    dateTime: Date;
+    serviceNames: string[];
+    subjectWhen: string;
+    dateLong: string;
+    time: string;
+    source: BookingEmailSource;
+    appointmentId: string;
+  }): Promise<void> {
+    if (!process.env.BREVO_SMTP_LOGIN || !process.env.BREVO_SMTP_KEY) {
+      console.warn("[BookingEmail] Brevo SMTP not configured, skipping staff email");
+      return;
+    }
+
+    const verifiedSender =
+      process.env.BREVO_VERIFIED_SENDER || "info@booqlyapp.com";
+    const servicesLabel = params.serviceNames.join(", ") || "Appointment";
+    const subject = `New booking: ${servicesLabel} (${params.clientFullName}) - ${params.subjectWhen}`;
+    const first = escapeHtml(params.staffName.split(/\s+/)[0] || "there");
+    const client = escapeHtml(params.clientFullName);
+    const business = escapeHtml(params.businessName);
+    const services = escapeHtml(servicesLabel);
+    const address = escapeHtml(params.businessAddress || "");
+    const when = escapeHtml(`${params.dateLong} • ${params.time}`);
+    const sourceLabel = params.source === "web" ? "Web booking" : "App booking";
+
+    const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /></head>
+<body style="margin:0;padding:0;background:#F3F4F6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#F3F4F6;padding:24px 12px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;">
+        <tr><td style="padding:28px 28px 8px 28px;text-align:center;">
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:18px;font-weight:700;margin:0 0 10px 0;">${business}</div>
+          <div style="font-family:Georgia,'Times New Roman',serif;font-size:26px;line-height:1.25;font-weight:700;margin:0 0 12px 0;">New booking, ${first}!</div>
+          <div style="font-size:14px;color:#6B7280;margin:0 0 8px 0;">${escapeHtml(sourceLabel)}</div>
+        </td></tr>
+        <tr><td style="padding:12px 28px;">
+          <table role="presentation" width="100%" style="background:#E8F1F9;border-radius:12px;"><tr><td align="center" style="padding:16px;">
+            <div style="font-size:15px;font-weight:700;color:#3B629B;">${when}</div>
+            ${address ? `<div style="font-size:13px;color:#5B82C2;margin-top:6px;">${address}</div>` : ""}
+          </td></tr></table>
+        </td></tr>
+        <tr><td style="padding:8px 28px 24px 28px;">
+          <table role="presentation" width="100%" style="font-size:14px;border-collapse:collapse;">
+            ${detailRow("Client", client, true)}
+            ${detailRow("Services", services, true)}
+          </table>
+        </td></tr>
+        <tr><td style="padding:0 28px 28px 28px;text-align:center;font-size:12px;color:#9CA3AF;">
+          Powered by <strong style="color:#6B7280;">Booqly</strong>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+
+    const text = [
+      `New booking, ${params.staffName.split(/\s+/)[0] || "there"}!`,
+      "",
+      `${params.dateLong} • ${params.time}`,
+      params.businessAddress || "",
+      "",
+      `Client: ${params.clientFullName}`,
+      `Services: ${servicesLabel}`,
+      `Source: ${sourceLabel}`,
+      "",
+      "Powered by Booqly",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    const icsPayload: BookingEmailPayload = {
+      toEmail: params.toEmail,
+      clientFirstName: params.clientFullName.split(/\s+/)[0] || "Client",
+      clientFullName: params.clientFullName,
+      businessName: params.businessName,
+      businessAddress: params.businessAddress,
+      customLink: null,
+      dateTime: params.dateTime,
+      serviceNames: params.serviceNames,
+      addOnNames: [],
+      stylistName: null,
+      totalPrice: 0,
+      depositPaid: 0,
+      amountDue: 0,
+      source: params.source,
+      appointmentId: params.appointmentId,
+    };
+
+    const transporter = this.createTransporter();
+    await transporter.sendMail({
+      from: `"${params.businessName} via Booqly" <${verifiedSender}>`,
+      to: params.toEmail,
+      subject,
+      html,
+      text,
+      attachments: [
+        {
+          filename: "appointment.ics",
+          content: buildIcs(icsPayload),
+          contentType: "text/calendar; charset=utf-8; method=PUBLISH",
+        },
+      ],
+    });
   }
 
   static buildDepositPayLink(appointmentId: string): string {

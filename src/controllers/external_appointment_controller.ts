@@ -338,6 +338,9 @@ export const createExternalAppointment = async (
     BookingConfirmationEmailService.queueSendForExternalAppointment(
       appointment.id
     );
+    BookingConfirmationEmailService.queueNotifyStaffOfNewExternalAppointment(
+      appointment.id
+    );
 
     return res.status(201).json({
       status: true,
@@ -1465,6 +1468,9 @@ export const createExternalAppointmentWithDeposit = async (
     await WaitlistService.clearSlotWaitlist(marketplaceId, bookingDateTime);
 
     BookingConfirmationEmailService.queueSendForExternalAppointment(
+      appointment.id
+    );
+    BookingConfirmationEmailService.queueNotifyStaffOfNewExternalAppointment(
       appointment.id
     );
 

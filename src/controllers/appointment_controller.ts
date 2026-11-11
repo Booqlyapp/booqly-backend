@@ -430,6 +430,10 @@ export const createAppointment = async (
     BookingConfirmationEmailService.queueSendForAppAppointment(
       newAppointment.id
     );
+    // Owner / assigned TM: email + push (client already emailed above).
+    BookingConfirmationEmailService.queueNotifyStaffOfNewAppAppointment(
+      newAppointment.id
+    );
 
     return res.status(201).json({
       status: true,
@@ -913,6 +917,12 @@ export const createProviderAppointment = async (
         newAppointment.id
       );
     }
+
+    // Notify assigned TM / other staff; skip the provider who just created it.
+    BookingConfirmationEmailService.queueNotifyStaffOfNewAppAppointment(
+      newAppointment.id,
+      { excludeUserId: requester.id }
+    );
 
     return res.status(201).json({
       status: true,
