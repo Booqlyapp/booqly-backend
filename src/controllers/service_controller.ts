@@ -14,8 +14,8 @@ type UpdateServiceData = Partial<{
   price: number;
   duration: string;
   requireDeposit: boolean;
-  depositType: "fixed" | "percentage" | null;
-  depositAmount: number | null;
+  depositType: "fixed" | "percentage";
+  depositAmount: number;
   providerTeamMemberIds: string[];
   addOns: Array<{
     id?: string;
@@ -23,6 +23,13 @@ type UpdateServiceData = Partial<{
     price: number;
   }>;
 }>;
+
+/** Sequelize accepts null to clear nullable columns; model update typings do not. */
+type ServiceUpdateValues = UpdateServiceData & {
+  depositType?: "fixed" | "percentage" | null;
+  depositAmount?: number | null;
+  imageUrl?: string;
+};
 
 function parseProviderTeamMemberIds(raw: unknown): string[] | undefined {
   if (raw === undefined || raw === null) return undefined;
@@ -164,7 +171,7 @@ export const updateService = async (
       imageUrl = localFileStorage.getPublicUrl(relativePath);
     }
 
-    const updateData: UpdateServiceData = {};
+    const updateData: ServiceUpdateValues = {};
     if (name !== undefined) updateData.name = name;
     if (category !== undefined) updateData.category = category;
     if (description !== undefined) updateData.description = description;
@@ -212,7 +219,7 @@ export const updateService = async (
         updateData.depositAmount = Number(depositAmount);
       }
     }
-    if (imageUrl !== undefined) (updateData as any).imageUrl = imageUrl;
+    if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
 
     // Only suite owners (not team members) can change service provider assignments.
     const parsedProviderIds = parseProviderTeamMemberIds(
@@ -233,10 +240,13 @@ export const updateService = async (
       });
     }
 
-    const [updatedCount] = await Service.update(updateData, {
-      where: { id: serviceId, deletedAt: null },
-      returning: true,
-    });
+    const [updatedCount] = await Service.update(
+      updateData as Parameters<typeof Service.update>[0],
+      {
+        where: { id: serviceId, deletedAt: null },
+        returning: true,
+      }
+    );
 
     if (updatedCount === 0) {
       return res.status(200).json({
