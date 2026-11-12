@@ -24,10 +24,17 @@ type UpdateServiceData = Partial<{
   }>;
 }>;
 
-/** Sequelize accepts null to clear nullable columns; model update typings do not. */
-type ServiceUpdateValues = UpdateServiceData & {
+/** Runtime update payload — allows null to clear nullable deposit columns. */
+type ServiceUpdateValues = {
+  name?: string;
+  category?: string;
+  description?: string;
+  price?: number;
+  duration?: string;
+  requireDeposit?: boolean;
   depositType?: "fixed" | "percentage" | null;
   depositAmount?: number | null;
+  providerTeamMemberIds?: string[];
   imageUrl?: string;
 };
 
@@ -240,13 +247,11 @@ export const updateService = async (
       });
     }
 
-    const [updatedCount] = await Service.update(
-      updateData as Parameters<typeof Service.update>[0],
-      {
-        where: { id: serviceId, deletedAt: null },
-        returning: true,
-      }
-    );
+    // Cast: Sequelize runtime accepts null to clear nullable deposit columns.
+    const [updatedCount] = await Service.update(updateData as any, {
+      where: { id: serviceId, deletedAt: null },
+      returning: true,
+    });
 
     if (updatedCount === 0) {
       return res.status(200).json({
