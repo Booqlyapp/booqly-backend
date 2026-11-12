@@ -14,8 +14,8 @@ type UpdateServiceData = Partial<{
   price: number;
   duration: string;
   requireDeposit: boolean;
-  depositType: 'fixed' | 'percentage';
-  depositAmount: number;
+  depositType: "fixed" | "percentage" | null;
+  depositAmount: number | null;
   providerTeamMemberIds: string[];
   addOns: Array<{
     id?: string;
@@ -171,10 +171,47 @@ export const updateService = async (
     if (price !== undefined) updateData.price = Number(price);
     if (duration !== undefined) updateData.duration = duration;
     if (requireDeposit !== undefined) {
-      updateData.requireDeposit = parseFormBoolean(requireDeposit);
+      const requireDepositFlag = parseFormBoolean(requireDeposit);
+      updateData.requireDeposit = requireDepositFlag;
+      if (!requireDepositFlag) {
+        // Turning deposit off must clear stored deposit config.
+        updateData.depositType = null;
+        updateData.depositAmount = null;
+      } else {
+        if (!depositType || !["fixed", "percentage"].includes(depositType)) {
+          return res.status(400).json({
+            status: false,
+            message:
+              "depositType must be either 'fixed' or 'percentage' when requireDeposit is true.",
+          });
+        }
+        const parsedDeposit =
+          depositAmount === undefined || depositAmount === null || depositAmount === ""
+            ? NaN
+            : Number(depositAmount);
+        if (!Number.isFinite(parsedDeposit) || parsedDeposit <= 0) {
+          return res.status(400).json({
+            status: false,
+            message:
+              "depositAmount must be a valid positive number when requireDeposit is true.",
+          });
+        }
+        if (depositType === "percentage" && parsedDeposit > 100) {
+          return res.status(400).json({
+            status: false,
+            message:
+              "depositAmount cannot exceed 100 when depositType is 'percentage'.",
+          });
+        }
+        updateData.depositType = depositType;
+        updateData.depositAmount = parsedDeposit;
+      }
+    } else {
+      if (depositType !== undefined) updateData.depositType = depositType;
+      if (depositAmount !== undefined) {
+        updateData.depositAmount = Number(depositAmount);
+      }
     }
-    if (depositType !== undefined) updateData.depositType = depositType;
-    if (depositAmount !== undefined) updateData.depositAmount = Number(depositAmount);
     if (imageUrl !== undefined) (updateData as any).imageUrl = imageUrl;
 
     // Only suite owners (not team members) can change service provider assignments.
