@@ -31,6 +31,15 @@ export class ReviewService {
       let includeClause: any[];
 
       const { Marketplace } = require('../models/marketplace_model');
+      const { Service } = require('../models/service_model');
+
+      const servicesInclude = {
+        model: Service,
+        as: 'services',
+        attributes: ['id', 'name'],
+        through: { attributes: [] },
+        required: false,
+      };
 
       if (userRole === 'client') {
         // For clients: find completed appointments where they haven't left a review
@@ -50,6 +59,7 @@ export class ReviewService {
               required: false,
             }],
           },
+          servicesInclude,
         ];
       } else {
         // For providers: find completed appointments where client hasn't left a review
@@ -68,6 +78,7 @@ export class ReviewService {
             as: 'user',
             attributes: ['id', 'name', 'profilePic'],
           },
+          servicesInclude,
         ];
       }
 
@@ -112,6 +123,11 @@ export class ReviewService {
           },
         });
 
+        const serviceName = ((appointment as any).services || [])
+          .map((s: any) => s?.name)
+          .filter((n: any) => typeof n === 'string' && n.trim().length > 0)
+          .join(', ');
+
         if (userRole === 'client') {
           // For clients: add if no review exists and client hasn't been prompted yet
           if (!existingReview) {
@@ -123,6 +139,7 @@ export class ReviewService {
               providerName: (appointment as any).marketplace?.businessName ||
                 (appointment as any).marketplace?.provider?.name,
               businessName: (appointment as any).marketplace?.businessName,
+              serviceName: serviceName || undefined,
             });
           } else if (existingReview && !existingReview.clientPrompted && (!existingReview.rating || existingReview.rating === 0)) {
             // Client hasn't been prompted yet and hasn't left a review
@@ -134,6 +151,7 @@ export class ReviewService {
               providerName: (appointment as any).marketplace?.businessName ||
                 (appointment as any).marketplace?.provider?.name,
               businessName: (appointment as any).marketplace?.businessName,
+              serviceName: serviceName || undefined,
             });
           }
         } else {
@@ -146,6 +164,7 @@ export class ReviewService {
               clientId: appointment.userId,
               clientName: (appointment as any).user?.name,
               hasClientReview: false,
+              serviceName: serviceName || undefined,
             });
           } else if (existingReview && !existingReview.providerPrompted && (!existingReview.providerResponse || existingReview.providerResponse.trim() === '')) {
             // Provider hasn't been prompted yet and hasn't left a response
@@ -156,6 +175,7 @@ export class ReviewService {
               clientId: appointment.userId,
               clientName: (appointment as any).user?.name,
               hasClientReview: !!existingReview.rating && existingReview.rating > 0,
+              serviceName: serviceName || undefined,
             });
           }
         }
