@@ -48,7 +48,6 @@ router.get("/appointments/:appointmentId", (req: Request, res: Response) => {
     h1 { font-size:22px; margin:0 0 10px; }
     p { color:#6B7280; font-size:14px; line-height:1.5; margin:0 0 20px; }
     a.btn { display:inline-block; background:#759CC9; color:#fff; text-decoration:none; font-weight:700; padding:12px 18px; border-radius:10px; }
-    a.secondary { display:block; margin-top:14px; color:#3B629B; font-size:13px; }
   </style>
 </head>
 <body>
@@ -56,8 +55,6 @@ router.get("/appointments/:appointmentId", (req: Request, res: Response) => {
     <h1>${title}</h1>
     <p>Opening this booking in the Booqly app…</p>
     <a id="openApp" class="btn" href="${androidIntent}">Open in Booqly</a>
-    <a class="secondary" href="${deepLink}">Use app link</a>
-    <a class="secondary" href="${httpsLink}">Having trouble? Tap here</a>
   </div>
   <script>
     (function () {
