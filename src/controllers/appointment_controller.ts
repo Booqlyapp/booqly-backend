@@ -1384,8 +1384,10 @@ export const updateAppointmentDateTime = async (
       });
     }
 
-    // Step 4: Update the appointment's dateTime
+    // Step 4: Update the appointment's dateTime + mark as rescheduled
+    // so provider/owner calendar shows Rescheduled (not Pending/Completed).
     appointment.dateTime = newAppointmentDate;
+    appointment.status = "postponed";
     appointment.updatedAt = new Date(); // Update timestamp
     // Reschedule → allow 24h / 1h client reminders for the new time.
     (appointment as any).reminder24hSentAt = null;
@@ -2436,7 +2438,11 @@ export const getUserAppointments = async (
       ],
       limit: limitNum,
       offset,
-      order: [["dateTime", "DESC"]], // Sort by dateTime descending (newest first)
+      // Newest booking first (when the booking was created), matching provider/owner history.
+      order: [
+        ["createdAt", "DESC"],
+        ["dateTime", "DESC"],
+      ],
     });
 
     return res.status(200).json({
